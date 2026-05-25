@@ -22,6 +22,7 @@ import {
   type QueueDetail,
   type QueuesOverview,
 } from "@/lib/remoteResources";
+import { readQueueMetrics } from "@/lib/queueMetrics";
 import { cn } from "@/lib/utils";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -47,6 +48,30 @@ function queueId(queue: unknown) {
 
 function queueName(queue: unknown) {
   return fieldString(queue, "queue_name", "name", "id") ?? "queue";
+}
+
+function formatCompact(value?: number) {
+  if (value === undefined) return "—";
+  return new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function formatBytes(value?: number) {
+  if (value === undefined) return "—";
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = value / 1024;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+}
+
+function formatTimestampMs(value?: number) {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString();
 }
 
 function SectionError({ error }: { error?: string | null }) {
@@ -120,7 +145,8 @@ export function QueuesView() {
 
   const consumers = asArray(asRecord(detail?.queue.data).consumers);
   const producers = asArray(asRecord(detail?.queue.data).producers);
-  const metrics = asRecord(detail?.metrics.data);
+  const metrics = readQueueMetrics(detail?.metrics.data);
+  const resultMetrics = readQueueMetrics(result);
 
   const sendMessage = async () => {
     if (!selectedQueueId) return;
@@ -244,18 +270,24 @@ export function QueuesView() {
                 </div>
               </div>
 
-              <div className="grid gap-4 xl:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-lg border border-border bg-background p-4">
-                  <p className="text-2xl font-semibold">{consumers.length}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Consumers</p>
+                  <p className="text-2xl font-semibold">{formatCompact(metrics.backlogCount)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Backlog messages</p>
                 </div>
                 <div className="rounded-lg border border-border bg-background p-4">
-                  <p className="text-2xl font-semibold">{producers.length}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Producers</p>
+                  <p className="text-2xl font-semibold">{formatBytes(metrics.backlogBytes)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Backlog size</p>
                 </div>
                 <div className="rounded-lg border border-border bg-background p-4">
-                  <p className="text-2xl font-semibold">{Object.keys(metrics).length}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Metric fields</p>
+                  <p className="truncate text-lg font-semibold">{formatTimestampMs(metrics.oldestMessageTimestampMs)}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Oldest message</p>
+                </div>
+                <div className="rounded-lg border border-border bg-background p-4">
+                  <p className="text-2xl font-semibold">
+                    {consumers.length}/{producers.length}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">Consumers / producers</p>
                 </div>
               </div>
 
@@ -325,6 +357,20 @@ export function QueuesView() {
                   {result !== null && (
                     <div className="rounded-lg border border-border bg-background p-4">
                       <h3 className="text-sm font-semibold">Send result</h3>
+                      <div className="mt-3 grid gap-2 md:grid-cols-3">
+                        <div className="rounded-md bg-muted/30 px-3 py-2">
+                          <p className="text-xs text-muted-foreground">Backlog</p>
+                          <p className="mt-1 font-mono text-sm">{formatCompact(resultMetrics.backlogCount)}</p>
+                        </div>
+                        <div className="rounded-md bg-muted/30 px-3 py-2">
+                          <p className="text-xs text-muted-foreground">Backlog size</p>
+                          <p className="mt-1 font-mono text-sm">{formatBytes(resultMetrics.backlogBytes)}</p>
+                        </div>
+                        <div className="rounded-md bg-muted/30 px-3 py-2">
+                          <p className="text-xs text-muted-foreground">Oldest message</p>
+                          <p className="mt-1 truncate font-mono text-sm">{formatTimestampMs(resultMetrics.oldestMessageTimestampMs)}</p>
+                        </div>
+                      </div>
                       <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
                         {JSON.stringify(result, null, 2)}
                       </pre>
