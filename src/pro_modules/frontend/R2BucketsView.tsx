@@ -1558,8 +1558,20 @@ export function R2BucketsView() {
 
   const handleDeleteObject = async (key: string) => {
     if (!selectedBucket) return;
-    await deleteR2Object(selectedBucket.name, key);
-    await reloadObjects();
+    const confirmed = await ask(t("r2.deleteObjectConfirm", { key }), {
+      title: t("r2.delete"),
+      kind: "warning",
+      okLabel: t("r2.delete"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteR2Object(selectedBucket.name, key);
+      await reloadObjects();
+    } catch (err) {
+      toast({ title: t("r2.objectActionFailed"), description: String(err), variant: "destructive" });
+    }
   };
 
   const handleDownloadObject = async (object: R2Object) => {
@@ -1600,6 +1612,28 @@ export function R2BucketsView() {
       toast({ title: t("r2.destinationSame"), variant: "destructive" });
       return;
     }
+    const destinationExists = (listing?.files ?? []).some((item) => item.key === destinationKey);
+    if (objectAction.mode === "copy" && destinationExists) {
+      const confirmed = await ask(t("r2.copyOverwriteConfirm", { key: destinationKey }), {
+        title: t("r2.copyObject"),
+        kind: "warning",
+        okLabel: t("r2.copyObject"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!confirmed) return;
+    }
+    if (objectAction.mode === "move") {
+      const confirmed = await ask(t("r2.moveObjectConfirm", {
+        source: objectAction.object.key,
+        destination: destinationKey,
+      }), {
+        title: t("r2.moveObject"),
+        kind: "warning",
+        okLabel: t("r2.moveObject"),
+        cancelLabel: t("common.cancel"),
+      });
+      if (!confirmed) return;
+    }
 
     setObjectActionRunning(true);
     try {
@@ -1634,6 +1668,7 @@ export function R2BucketsView() {
   }, [
     objectAction,
     objectActionKey,
+    listing?.files,
     prefix,
     prefetchR2Prefix,
     reloadObjects,
