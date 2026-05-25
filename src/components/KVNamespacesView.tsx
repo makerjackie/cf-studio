@@ -147,6 +147,11 @@ export function KVNamespacesView() {
       setError("TTL must be empty or at least 60 seconds.");
       return;
     }
+    const existingKeyLabel = selectedKey && selectedKey !== keyDraft.trim() ? `${selectedKey} -> ${keyDraft.trim()}` : keyDraft.trim();
+    const confirmed = window.confirm(
+      `Save KV key "${existingKeyLabel}" in ${selectedNamespace?.title ?? "this namespace"}? This writes to the remote namespace and may overwrite an existing value.`
+    );
+    if (!confirmed) return;
     setStatus("saving");
     setError(null);
     setMessage(null);

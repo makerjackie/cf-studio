@@ -167,6 +167,16 @@ export function QueuesView() {
         return;
       }
     }
+    const batchMessages = body.split("\n").filter((line) => line.trim());
+    if (batchMode && batchMessages.length === 0) {
+      setError("Batch mode needs at least one message.");
+      return;
+    }
+    const messageCount = batchMode ? batchMessages.length : 1;
+    const confirmed = window.confirm(
+      `Send ${messageCount} test message${messageCount === 1 ? "" : "s"} to ${queueName(selectedQueue)}? This writes to the remote Queue and may trigger production consumers.`
+    );
+    if (!confirmed) return;
     setStatus("sending");
     setError(null);
     setResult(null);
@@ -174,7 +184,7 @@ export function QueuesView() {
       const sendResult = batchMode
         ? await sendQueueBatch(
             selectedQueueId,
-            body.split("\n").filter((line) => line.trim()),
+            batchMessages,
             contentType,
             delay
           )
