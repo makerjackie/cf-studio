@@ -220,25 +220,38 @@ export function useR2Buckets() {
 
   // Seed local state from cache immediately
   const [state, setState] = useState<AsyncState<R2Bucket[]>>(() =>
-    cached.length > 0 && !isCacheStale(lastFetched)
+    cached.length > 0
       ? { status: "success", data: cached }
       : { status: "idle" }
   );
 
-  const [isFromCache, setIsFromCache] = useState(
-    cached.length > 0 && !isCacheStale(lastFetched)
-  );
+  const [isFromCache, setIsFromCache] = useState(cached.length > 0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchFromApi = useCallback(async () => {
-    setState({ status: "loading" });
+    const hasCachedBuckets = useAppStore.getState().r2Buckets.length > 0;
+    if (hasCachedBuckets) {
+      setIsRefreshing(true);
+    } else {
+      setState({ status: "loading" });
+    }
     setIsFromCache(false);
+
     try {
       // fetchR2Buckets is in r2.ts and uses invokeCloudflare under the hood
       const buckets = await fetchR2Buckets();
       setBuckets(buckets);
       setState({ status: "success", data: buckets });
     } catch (err) {
-      setState({ status: "error", message: String(err) });
+      const cachedBuckets = useAppStore.getState().r2Buckets;
+      if (cachedBuckets.length > 0) {
+        setState({ status: "success", data: cachedBuckets });
+        setIsFromCache(true);
+      } else {
+        setState({ status: "error", message: String(err) });
+      }
+    } finally {
+      setIsRefreshing(false);
     }
   }, [setBuckets]);
 
@@ -248,7 +261,7 @@ export function useR2Buckets() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // run once on mount
 
-  return { state, refresh: fetchFromApi, isFromCache };
+  return { state, refresh: fetchFromApi, isFromCache, isRefreshing };
 }
 
 // ── D1 Schema hook ─────────────────────────────────────────────────────────────

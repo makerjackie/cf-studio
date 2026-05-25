@@ -34,6 +34,11 @@ import {
 } from "@/lib/r2";
 import { cn, formatBytes } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import {
+  isCacheStale,
+  r2ObjectListingCacheKey,
+  useAppStore,
+} from "@/store/useAppStore";
 
 function BucketRow({
   bucket,
@@ -100,15 +105,26 @@ function domainLabel(domainsInfo: BucketDomainsInfo | null, publicDomain: string
   return publicDomain ? publicDomain : null;
 }
 
+function formatCacheTime(timestamp: number) {
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 export function R2BucketsView() {
   const { t } = useI18n();
   const { toast } = useToast();
-  const { state, refresh } = useR2Buckets();
+  const { state, refresh, isRefreshing: isRefreshingBuckets } = useR2Buckets();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const objectRequestIdRef = useRef(0);
+  const setR2ObjectListing = useAppStore((s) => s.setR2ObjectListing);
   const [selectedBucket, setSelectedBucket] = useState<R2Bucket | null>(null);
   const [prefix, setPrefix] = useState("");
   const [listing, setListing] = useState<FolderListing | null>(null);
   const [objectsState, setObjectsState] = useState<"idle" | "loading" | "error">("idle");
+  const [objectsRefreshing, setObjectsRefreshing] = useState(false);
+  const [objectsLastUpdated, setObjectsLastUpdated] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [publicDomain, setPublicDomain] = useState<string | null>(null);
   const [domainsInfo, setDomainsInfo] = useState<BucketDomainsInfo | null>(null);
@@ -120,11 +136,77 @@ export function R2BucketsView() {
   const buckets = state.status === "success" ? state.data : [];
   const currentDomainLabel = domainLabel(domainsInfo, publicDomain);
 
+  const loadObjects = useCallback(
+    async (force = false) => {
+      const bucketName = selectedBucket?.name;
+      const requestId = ++objectRequestIdRef.current;
+
+      if (!bucketName) {
+        setListing(null);
+        setObjectsState("idle");
+        setObjectsRefreshing(false);
+        setObjectsLastUpdated(null);
+        setError(null);
+        return;
+      }
+
+      const cacheKey = r2ObjectListingCacheKey(bucketName, prefix);
+      const cached = useAppStore.getState().r2ObjectListings[cacheKey];
+
+      if (cached) {
+        setListing(cached.data);
+        setObjectsLastUpdated(cached.timestamp);
+        setObjectsState("idle");
+      } else {
+        setListing(null);
+        setObjectsLastUpdated(null);
+      }
+
+      setError(null);
+
+      const shouldFetch = force || !cached || isCacheStale(cached.timestamp);
+      if (!shouldFetch) {
+        setObjectsRefreshing(false);
+        return;
+      }
+
+      if (cached) {
+        setObjectsRefreshing(true);
+      } else {
+        setObjectsState("loading");
+        setObjectsRefreshing(false);
+      }
+
+      try {
+        const nextListing = await listR2Objects(bucketName, prefix);
+        if (objectRequestIdRef.current !== requestId) return;
+
+        const updatedAt = Date.now();
+        setR2ObjectListing(cacheKey, nextListing);
+        setListing(nextListing);
+        setObjectsLastUpdated(updatedAt);
+        setObjectsState("idle");
+      } catch (err) {
+        if (objectRequestIdRef.current !== requestId) return;
+
+        setError(String(err));
+        if (cached) {
+          setObjectsState("idle");
+        } else {
+          setObjectsState("error");
+        }
+      } finally {
+        if (objectRequestIdRef.current === requestId) {
+          setObjectsRefreshing(false);
+        }
+      }
+    },
+    [prefix, selectedBucket?.name, setR2ObjectListing]
+  );
+
   const reloadObjects = useCallback(async () => {
-    if (!selectedBucket) return;
-    const nextListing = await listR2Objects(selectedBucket.name, prefix);
-    setListing(nextListing);
-  }, [selectedBucket, prefix]);
+    await loadObjects(true);
+  }, [loadObjects]);
 
   useEffect(() => {
     if (!selectedBucket && buckets.length > 0) {
@@ -135,26 +217,14 @@ export function R2BucketsView() {
   useEffect(() => {
     if (!selectedBucket) return;
 
-    let cancelled = false;
-    setObjectsState("loading");
-    setError(null);
+    loadObjects(false);
+  }, [loadObjects, selectedBucket]);
 
-    listR2Objects(selectedBucket.name, prefix)
-      .then((nextListing) => {
-        if (cancelled) return;
-        setListing(nextListing);
-        setObjectsState("idle");
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setError(String(err));
-        setObjectsState("error");
-      });
-
+  useEffect(() => {
     return () => {
-      cancelled = true;
+      objectRequestIdRef.current += 1;
     };
-  }, [selectedBucket, prefix]);
+  }, []);
 
   useEffect(() => {
     if (!selectedBucket) return;
@@ -330,8 +400,8 @@ export function R2BucketsView() {
             <Clipboard size={14} className="mr-2" />
             {t("r2.pasteImage")}
           </Button>
-          <Button variant="ghost" size="icon" onClick={refresh} disabled={state.status === "loading"}>
-            <RefreshCw size={14} className={cn(state.status === "loading" && "animate-spin")} />
+          <Button variant="ghost" size="icon" onClick={refresh} disabled={state.status === "loading" || isRefreshingBuckets}>
+            <RefreshCw size={14} className={cn((state.status === "loading" || isRefreshingBuckets) && "animate-spin")} />
           </Button>
           <input
             ref={fileInputRef}
@@ -386,9 +456,31 @@ export function R2BucketsView() {
                 <p className="truncate text-sm font-semibold">{selectedBucket?.name ?? t("r2.selectBucket")}</p>
                 <p className="truncate font-mono text-xs text-muted-foreground">/{prefix}</p>
               </div>
-              <Button variant="outline" size="sm" onClick={goUp} disabled={!prefix}>
-                {t("r2.up")}
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                {objectsRefreshing && (
+                  <Badge variant="secondary" className="h-6 gap-1.5 text-[10px]">
+                    <Loader2 size={11} className="animate-spin" />
+                    {t("r2.refreshingObjects")}
+                  </Badge>
+                )}
+                {objectsLastUpdated && !objectsRefreshing && (
+                  <span className="hidden text-xs text-muted-foreground sm:inline">
+                    {t("r2.cachedObjects").replace("{time}", formatCacheTime(objectsLastUpdated))}
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={reloadObjects}
+                  disabled={!selectedBucket || objectsRefreshing || objectsState === "loading"}
+                  title={t("r2.refreshObjects")}
+                >
+                  <RefreshCw size={14} className={cn(objectsRefreshing && "animate-spin")} />
+                </Button>
+                <Button variant="outline" size="sm" onClick={goUp} disabled={!prefix}>
+                  {t("r2.up")}
+                </Button>
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2 text-xs">
@@ -420,6 +512,11 @@ export function R2BucketsView() {
 
           {objectsState === "loading" && <p className="p-4 text-sm text-muted-foreground">{t("r2.loadingObjects")}</p>}
           {objectsState === "error" && <p className="p-4 text-sm text-destructive">{error}</p>}
+          {objectsState === "idle" && error && listing && (
+            <p className="border-b border-border/60 px-4 py-2 text-xs text-destructive">
+              {t("r2.refreshFailedUsingCache")}: {error}
+            </p>
+          )}
           {objectsState === "idle" && selectedBucket && listing && (
             <div className="divide-y divide-border">
               {listing.folders.map((folder) => (

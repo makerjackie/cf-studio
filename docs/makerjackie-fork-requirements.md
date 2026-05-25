@@ -27,6 +27,8 @@ The strongest use case is fast local management for D1, R2, and KV when the Clou
 - Preview public images when a public domain is enabled.
 - Copy object public URLs.
 - Detect bucket public domain status by checking custom domains first, then managed `r2.dev`.
+- Cache bucket object listings by bucket and prefix, then refresh stale listings in the background.
+- Keep manual object-list refresh available for users who need current remote state immediately.
 
 ### Permissions
 
@@ -103,6 +105,7 @@ Requirements:
 - Rename object key before upload.
 - Optional prefix selector, for example `images/`, `blog/`, `assets/`.
 - Basic conflict handling when the object key already exists.
+- Stale-while-revalidate browsing for bucket folders and object listings.
 
 Acceptance:
 

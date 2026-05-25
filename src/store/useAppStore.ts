@@ -10,7 +10,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { D1Database, CloudflareAccount } from "@/hooks/useCloudflare";
-import type { R2Bucket } from "@/lib/r2";
+import type { FolderListing, R2Bucket } from "@/lib/r2";
 
 export interface UserProfile {
   id: string;
@@ -44,10 +44,20 @@ export interface KVNamespace {
 
 /** How long cached data is considered fresh (ms). Default: 10 minutes. */
 export const CACHE_TTL_MS = 10 * 60 * 1_000;
+export const R2_OBJECT_LISTING_CACHE_LIMIT = 200;
 
 export function isCacheStale(lastFetched: number | null): boolean {
   if (lastFetched === null) return true;
   return Date.now() - lastFetched > CACHE_TTL_MS;
+}
+
+export function r2ObjectListingCacheKey(bucketName: string, prefix: string): string {
+  return `${encodeURIComponent(bucketName)}::${encodeURIComponent(prefix)}`;
+}
+
+export interface R2ObjectListingCacheEntry {
+  data: FolderListing;
+  timestamp: number;
 }
 
 // ── Store shape ───────────────────────────────────────────────────────────────
@@ -61,6 +71,7 @@ interface AppState {
   databases: D1Database[];
   kvNamespaces: KVNamespace[];
   r2Buckets: R2Bucket[];
+  r2ObjectListings: Record<string, R2ObjectListingCacheEntry>;
 
   // ── Preferences ──
   tableDensity: "compact" | "comfortable";
@@ -128,6 +139,9 @@ interface AppState {
   /** Overwrite the R2 buckets list and stamp the fetch time. */
   setR2Buckets: (buckets: R2Bucket[]) => void;
 
+  /** Cache one R2 bucket/prefix object listing for stale-while-revalidate browsing. */
+  setR2ObjectListing: (cacheKey: string, listing: FolderListing) => void;
+
   /**
    * Wipe all cached data and timestamps.
    * Call this when the user switches Cloudflare accounts or logs out.
@@ -152,6 +166,7 @@ export const useAppStore = create<AppState>()(
       databases: [],
       kvNamespaces: [],
       r2Buckets: [],
+      r2ObjectListings: {},
       tableDensity: "comfortable",
       showTableColumnCounts: true,
       autoUpdate: true,
@@ -212,6 +227,26 @@ export const useAppStore = create<AppState>()(
       setR2Buckets: (buckets) =>
         set({ r2Buckets: buckets, r2LastFetched: Date.now() }),
 
+      setR2ObjectListing: (cacheKey, listing) =>
+        set((state) => {
+          const next: Record<string, R2ObjectListingCacheEntry> = {
+            ...state.r2ObjectListings,
+            [cacheKey]: { data: listing, timestamp: Date.now() },
+          };
+
+          const keys = Object.keys(next);
+          if (keys.length > R2_OBJECT_LISTING_CACHE_LIMIT) {
+            keys
+              .sort((a, b) => next[a].timestamp - next[b].timestamp)
+              .slice(0, keys.length - R2_OBJECT_LISTING_CACHE_LIMIT)
+              .forEach((key) => {
+                delete next[key];
+              });
+          }
+
+          return { r2ObjectListings: next };
+        }),
+
       clearCache: () =>
         set({
           userProfile: null,
@@ -221,6 +256,7 @@ export const useAppStore = create<AppState>()(
           databases: [],
           kvNamespaces: [],
           r2Buckets: [],
+          r2ObjectListings: {},
           lastFetched: null,
           kvLastFetched: null,
           r2LastFetched: null,
@@ -293,6 +329,7 @@ export const useAppStore = create<AppState>()(
         databases: state.databases,
         kvNamespaces: state.kvNamespaces,
         r2Buckets: state.r2Buckets,
+        r2ObjectListings: state.r2ObjectListings,
         lastFetched: state.lastFetched,
         kvLastFetched: state.kvLastFetched,
         r2LastFetched: state.r2LastFetched,
