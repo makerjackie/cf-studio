@@ -32,6 +32,7 @@ commands.allow = [
     "upload_r2_remote_url",
     "cancel_upload_r2_object",
     "download_r2_object",
+    "cancel_download_r2_object",
     "copy_r2_object",
     "move_r2_object",
     "update_r2_bucket_managed_domain",

@@ -214,6 +214,7 @@ pub fn run() {
             r2_pro::upload_r2_remote_url,
             r2_pro::cancel_upload_r2_object,
             r2_pro::download_r2_object,
+            r2_pro::cancel_download_r2_object,
             r2_pro::copy_r2_object,
             r2_pro::move_r2_object,
             r2_pro::update_r2_bucket_managed_domain,

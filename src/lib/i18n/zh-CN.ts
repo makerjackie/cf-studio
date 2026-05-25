@@ -412,6 +412,8 @@ export const zhCN = {
     "r2.transfer.failed": "失败",
     "r2.transferAttempt": "第 {attempt} 次尝试",
     "r2.retryingUpload": "正在重试上传，第 {attempt} 次尝试",
+    "r2.retryingDownload": "正在重试下载，第 {attempt} 次尝试",
+    "r2.downloadCancelled": "下载已取消",
     "r2.cacheControl": "Cache-Control",
     "r2.cacheControlHelp": "写入对象的 HTTP 缓存头，告诉浏览器和 CDN 可以缓存多久。静态图片常用长期缓存；会频繁替换的文件建议留空或设置较短时间。",
     "r2.cacheControlHint": "不确定就留空。长期不变的静态资源可用 public, max-age=31536000, immutable。",

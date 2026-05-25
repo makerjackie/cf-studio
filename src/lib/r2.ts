@@ -146,6 +146,17 @@ export async function cancelUploadR2Object(
 }
 
 /**
+ * Cancel an ongoing download process.
+ */
+export async function cancelDownloadR2Object(
+  downloadId: string,
+  bucketName: string,
+  key: string
+): Promise<void> {
+  return invokeCloudflare<void>("cancel_download_r2_object", { downloadId, bucketName, key });
+}
+
+/**
  * Delete an object from R2.
  */
 export async function deleteR2Object(
@@ -164,12 +175,14 @@ export async function deleteR2Object(
 export async function downloadR2Object(
   bucketName: string,
   key: string,
-  destinationPath: string
+  destinationPath: string,
+  downloadId?: string
 ): Promise<void> {
   return invokeCloudflare<void>("download_r2_object", {
     bucketName,
     key,
     destinationPath,
+    downloadId,
   });
 }
 

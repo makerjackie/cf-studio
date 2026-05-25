@@ -412,6 +412,8 @@ export const enUS = {
     "r2.transfer.failed": "Failed",
     "r2.transferAttempt": "Attempt {attempt}",
     "r2.retryingUpload": "Retrying upload, attempt {attempt}",
+    "r2.retryingDownload": "Retrying download, attempt {attempt}",
+    "r2.downloadCancelled": "Download canceled",
     "r2.cacheControl": "Cache-Control",
     "r2.cacheControlHelp": "Writes an HTTP cache header on uploaded objects, telling browsers and CDNs how long they may cache the file. Long cache is good for static assets; changing files should use a short cache or stay empty.",
     "r2.cacheControlHint": "Leave empty if unsure. For long-lived static assets, use public, max-age=31536000, immutable.",

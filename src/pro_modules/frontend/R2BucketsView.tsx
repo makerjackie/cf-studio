@@ -54,6 +54,7 @@ import { useR2Buckets } from "@/hooks/useCloudflare";
 import {
   cacheR2ObjectPreview,
   cacheR2PublicThumbnail,
+  cancelDownloadR2Object,
   cancelUploadR2Object,
   copyR2Object,
   deleteR2Object,
@@ -139,6 +140,15 @@ interface R2UploadProgressEvent {
   bucket_name: string;
   key: string;
   bytes_sent: number;
+  total_bytes: number;
+  progress: number;
+}
+
+interface R2DownloadProgressEvent {
+  download_id: string;
+  bucket_name: string;
+  key: string;
+  bytes_received: number;
   total_bytes: number;
   progress: number;
 }
@@ -1088,7 +1098,8 @@ export function R2BucketsView() {
   }, []);
 
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
+    let unsubscribeUpload: (() => void) | null = null;
+    let unsubscribeDownload: (() => void) | null = null;
     listen<R2UploadProgressEvent>("r2-upload-progress", (event) => {
       updateTransfer(event.payload.upload_id, {
         bucketName: event.payload.bucket_name,
@@ -1096,20 +1107,37 @@ export function R2BucketsView() {
         progress: Math.max(0, Math.min(99, Math.round(event.payload.progress))),
       });
     }).then((dispose) => {
-      unsubscribe = dispose;
+      unsubscribeUpload = dispose;
     }).catch((err) => {
       console.warn("[CF Studio] Could not listen for R2 upload progress:", err);
     });
+    listen<R2DownloadProgressEvent>("r2-download-progress", (event) => {
+      updateTransfer(event.payload.download_id, {
+        bucketName: event.payload.bucket_name,
+        key: event.payload.key,
+        progress: Math.max(0, Math.min(99, Math.round(event.payload.progress))),
+      });
+    }).then((dispose) => {
+      unsubscribeDownload = dispose;
+    }).catch((err) => {
+      console.warn("[CF Studio] Could not listen for R2 download progress:", err);
+    });
     return () => {
-      unsubscribe?.();
+      unsubscribeUpload?.();
+      unsubscribeDownload?.();
     };
   }, [updateTransfer]);
 
   const cancelTransfer = useCallback(async (item: TransferItem) => {
-    if (item.kind !== "upload" || item.status !== "running") return;
+    if (item.status !== "running") return;
     try {
-      await cancelUploadR2Object(item.id, item.bucketName || selectedBucket?.name || "", item.key);
-      updateTransfer(item.id, { status: "failed", error: t("r2.uploadCancelled") });
+      if (item.kind === "upload") {
+        await cancelUploadR2Object(item.id, item.bucketName || selectedBucket?.name || "", item.key);
+        updateTransfer(item.id, { status: "failed", error: t("r2.uploadCancelled") });
+      } else {
+        await cancelDownloadR2Object(item.id, item.bucketName || selectedBucket?.name || "", item.key);
+        updateTransfer(item.id, { status: "failed", error: t("r2.downloadCancelled") });
+      }
     } catch (err) {
       toast({ title: t("r2.objectActionFailed"), description: String(err), variant: "destructive" });
     }
@@ -1621,24 +1649,69 @@ export function R2BucketsView() {
       const directory = Array.isArray(selected) ? selected[0] : selected;
       if (!directory) return;
 
-      for (const object of objects) {
+      const normalizedConcurrency = clampInteger(transferConcurrency, 1, 5, DEFAULT_R2_UPLOAD_SETTINGS.transferConcurrency);
+      const normalizedRetryCount = clampInteger(retryCount, 0, 3, DEFAULT_R2_UPLOAD_SETTINGS.retryCount);
+      const downloadResults: Array<{ key: string; ok: boolean; error?: string }> = objects.map((object) => ({
+        key: object.key,
+        ok: false,
+      }));
+
+      await runWithConcurrency(objects, normalizedConcurrency, async (object, index) => {
         const transferId = addTransfer({
           kind: "download",
+          bucketName: selectedBucket.name,
           key: object.key,
           label: fileNameFromKey(object.key),
         });
-        const destinationPath = `${directory.replace(/\/+$/, "")}/${fileNameFromKey(object.key)}`;
+        const destinationPath = joinLocalPath(directory, fileNameFromKey(object.key));
 
-        try {
-          updateTransfer(transferId, { status: "running", progress: 20 });
-          await downloadR2Object(selectedBucket.name, object.key, destinationPath);
-          updateTransfer(transferId, { status: "done", progress: 100 });
-        } catch (err) {
-          updateTransfer(transferId, { status: "failed", progress: 100, error: String(err) });
+        for (let attempt = 0; attempt <= normalizedRetryCount; attempt += 1) {
+          try {
+            updateTransfer(transferId, {
+              status: "running",
+              progress: attempt === 0 ? 5 : 0,
+              attempt: attempt + 1,
+              error: undefined,
+            });
+            await downloadR2Object(selectedBucket.name, object.key, destinationPath, transferId);
+            updateTransfer(transferId, { status: "done", progress: 100 });
+            downloadResults[index] = { key: object.key, ok: true };
+            return;
+          } catch (err) {
+            const message = String(err);
+            if (message.toLowerCase().includes("cancel")) {
+              updateTransfer(transferId, { status: "failed", progress: 100, error: t("r2.downloadCancelled") });
+              downloadResults[index] = { key: object.key, ok: false, error: t("r2.downloadCancelled") };
+              return;
+            }
+            if (attempt < normalizedRetryCount) {
+              updateTransfer(transferId, {
+                status: "queued",
+                progress: 0,
+                error: t("r2.retryingDownload", { attempt: attempt + 2 }),
+              });
+              continue;
+            }
+            updateTransfer(transferId, { status: "failed", progress: 100, error: message });
+            downloadResults[index] = { key: object.key, ok: false, error: message };
+            return;
+          }
         }
+
+      });
+
+      const failedCount = downloadResults.filter((item) => !item.ok).length;
+      if (failedCount > 0) {
+        toast({
+          title: t("r2.downloadFailed"),
+          description: downloadResults.find((item) => !item.ok)?.error,
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: t("r2.downloaded"), description: directory });
       }
     },
-    [addTransfer, selectedBucket, updateTransfer]
+    [addTransfer, retryCount, selectedBucket, t, toast, transferConcurrency, updateTransfer]
   );
 
   const toggleObjectSelection = useCallback((key: string) => {
@@ -2300,7 +2373,7 @@ export function R2BucketsView() {
                   {item.error && <p className="mt-1 truncate text-destructive">{item.error}</p>}
                 </div>
                 <div className="flex items-center gap-2">
-                  {item.kind === "upload" && item.status === "running" && (
+                  {item.status === "running" && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => cancelTransfer(item)} title={t("common.cancel")}>
                       <X size={13} />
                     </Button>

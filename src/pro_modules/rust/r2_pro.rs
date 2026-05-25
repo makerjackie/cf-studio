@@ -6,6 +6,7 @@ use futures_util::StreamExt;
 use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
+use tokio::io::AsyncWriteExt;
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::cloudflare_auth::read_credentials;
@@ -14,6 +15,8 @@ use crate::r2::resolve_account_id;
 
 static CANCELLED_UPLOADS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
+static CANCELLED_DOWNLOADS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[derive(Clone, serde::Serialize)]
 struct R2UploadProgress {
@@ -21,6 +24,16 @@ struct R2UploadProgress {
     bucket_name: String,
     key: String,
     bytes_sent: u64,
+    total_bytes: u64,
+    progress: f64,
+}
+
+#[derive(Clone, serde::Serialize)]
+struct R2DownloadProgress {
+    download_id: String,
+    bucket_name: String,
+    key: String,
+    bytes_received: u64,
     total_bytes: u64,
     progress: f64,
 }
@@ -35,6 +48,19 @@ fn is_upload_cancelled(upload_id: &str) -> bool {
     CANCELLED_UPLOADS
         .lock()
         .map(|cancelled| cancelled.contains(upload_id))
+        .unwrap_or(false)
+}
+
+fn clear_cancelled_download(download_id: &str) {
+    if let Ok(mut cancelled) = CANCELLED_DOWNLOADS.lock() {
+        cancelled.remove(download_id);
+    }
+}
+
+fn is_download_cancelled(download_id: &str) -> bool {
+    CANCELLED_DOWNLOADS
+        .lock()
+        .map(|cancelled| cancelled.contains(download_id))
         .unwrap_or(false)
 }
 
@@ -58,6 +84,32 @@ fn emit_upload_progress(
             bucket_name: bucket_name.to_string(),
             key: key.to_string(),
             bytes_sent,
+            total_bytes,
+            progress,
+        },
+    );
+}
+
+fn emit_download_progress(
+    app: &AppHandle,
+    download_id: &str,
+    bucket_name: &str,
+    key: &str,
+    bytes_received: u64,
+    total_bytes: u64,
+) {
+    let progress = if total_bytes == 0 {
+        0.0
+    } else {
+        ((bytes_received as f64 / total_bytes as f64) * 100.0).clamp(0.0, 100.0)
+    };
+    let _ = app.emit(
+        "r2-download-progress",
+        R2DownloadProgress {
+            download_id: download_id.to_string(),
+            bucket_name: bucket_name.to_string(),
+            key: key.to_string(),
+            bytes_received,
             total_bytes,
             progress,
         },
@@ -347,10 +399,15 @@ pub async fn cancel_upload_r2_object(
 
 #[tauri::command]
 pub async fn download_r2_object(
+    app: AppHandle,
     bucket_name: String,
     key: String,
     destination_path: String,
+    download_id: Option<String>,
 ) -> Result<(), String> {
+    let download_id = download_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    clear_cancelled_download(&download_id);
+
     let (client, account_id) = client_and_account().await?;
     let url = format!(
         "accounts/{account_id}/r2/buckets/{bucket_name}/objects/{}",
@@ -359,15 +416,17 @@ pub async fn download_r2_object(
 
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     let status = resp.status();
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to download object: {e}"))?;
-
     if !status.is_success() {
-        let text = String::from_utf8_lossy(&bytes);
+        let text = resp.text().await.unwrap_or_default();
         return Err(format!("Download failed with HTTP {status}: {text}"));
     }
+
+    let total_bytes = resp
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
 
     if let Some(parent) = std::path::Path::new(&destination_path).parent() {
         tokio::fs::create_dir_all(parent)
@@ -375,10 +434,72 @@ pub async fn download_r2_object(
             .map_err(|e| format!("Failed to create destination directory: {e}"))?;
     }
 
-    tokio::fs::write(&destination_path, bytes)
-        .await
-        .map_err(|e| format!("Failed to write destination file: {e}"))?;
+    emit_download_progress(&app, &download_id, &bucket_name, &key, 0, total_bytes);
 
+    let mut file = tokio::fs::File::create(&destination_path)
+        .await
+        .map_err(|e| format!("Failed to create destination file: {e}"))?;
+    let mut stream = resp.bytes_stream();
+    let mut bytes_received = 0u64;
+
+    while let Some(chunk) = stream.next().await {
+        if is_download_cancelled(&download_id) {
+            clear_cancelled_download(&download_id);
+            let _ = tokio::fs::remove_file(&destination_path).await;
+            return Err("Download canceled.".to_string());
+        }
+
+        let chunk = chunk.map_err(|e| format!("Failed to download object: {e}"))?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Failed to write destination file: {e}"))?;
+        bytes_received += chunk.len() as u64;
+        emit_download_progress(
+            &app,
+            &download_id,
+            &bucket_name,
+            &key,
+            bytes_received,
+            total_bytes,
+        );
+    }
+
+    if is_download_cancelled(&download_id) {
+        clear_cancelled_download(&download_id);
+        let _ = tokio::fs::remove_file(&destination_path).await;
+        return Err("Download canceled.".to_string());
+    }
+
+    file.flush()
+        .await
+        .map_err(|e| format!("Failed to flush destination file: {e}"))?;
+
+    emit_download_progress(
+        &app,
+        &download_id,
+        &bucket_name,
+        &key,
+        bytes_received,
+        if total_bytes == 0 {
+            bytes_received
+        } else {
+            total_bytes
+        },
+    );
+    clear_cancelled_download(&download_id);
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel_download_r2_object(
+    download_id: String,
+    _bucket_name: String,
+    _key: String,
+) -> Result<(), String> {
+    if let Ok(mut cancelled) = CANCELLED_DOWNLOADS.lock() {
+        cancelled.insert(download_id);
+    }
     Ok(())
 }
 
