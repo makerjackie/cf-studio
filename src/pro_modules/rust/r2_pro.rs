@@ -1,9 +1,68 @@
-use reqwest::header::{CACHE_CONTROL, CONTENT_TYPE};
+use std::collections::HashSet;
+use std::io;
+use std::sync::{LazyLock, Mutex};
+
+use futures_util::StreamExt;
+use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
 use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter};
+use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::cloudflare_auth::read_credentials;
 use crate::cloudflare_client::{CfError, CfResponse, CloudflareClient};
 use crate::r2::resolve_account_id;
+
+static CANCELLED_UPLOADS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+#[derive(Clone, serde::Serialize)]
+struct R2UploadProgress {
+    upload_id: String,
+    bucket_name: String,
+    key: String,
+    bytes_sent: u64,
+    total_bytes: u64,
+    progress: f64,
+}
+
+fn clear_cancelled_upload(upload_id: &str) {
+    if let Ok(mut cancelled) = CANCELLED_UPLOADS.lock() {
+        cancelled.remove(upload_id);
+    }
+}
+
+fn is_upload_cancelled(upload_id: &str) -> bool {
+    CANCELLED_UPLOADS
+        .lock()
+        .map(|cancelled| cancelled.contains(upload_id))
+        .unwrap_or(false)
+}
+
+fn emit_upload_progress(
+    app: &AppHandle,
+    upload_id: &str,
+    bucket_name: &str,
+    key: &str,
+    bytes_sent: u64,
+    total_bytes: u64,
+) {
+    let progress = if total_bytes == 0 {
+        100.0
+    } else {
+        ((bytes_sent as f64 / total_bytes as f64) * 100.0).clamp(0.0, 100.0)
+    };
+    let _ = app.emit(
+        "r2-upload-progress",
+        R2UploadProgress {
+            upload_id: upload_id.to_string(),
+            bucket_name: bucket_name.to_string(),
+            key: key.to_string(),
+            bytes_sent,
+            total_bytes,
+            progress,
+        },
+    );
+}
 
 fn api_errors_to_string(errors: &[CfError]) -> String {
     errors
@@ -106,20 +165,86 @@ pub async fn empty_r2_bucket(_bucket_name: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn upload_r2_object(
+    app: AppHandle,
     bucket_name: String,
     key: String,
     local_path: String,
-    _upload_id: String,
+    upload_id: String,
     cache_control: Option<String>,
 ) -> Result<(), String> {
-    let bytes = tokio::fs::read(&local_path)
+    clear_cancelled_upload(&upload_id);
+    let file = tokio::fs::File::open(&local_path)
         .await
-        .map_err(|e| format!("Failed to read local file: {e}"))?;
+        .map_err(|e| format!("Failed to open local file: {e}"))?;
+    let total_bytes = file
+        .metadata()
+        .await
+        .map_err(|e| format!("Failed to read local file metadata: {e}"))?
+        .len();
     let content_type = mime_guess::from_path(&local_path)
         .first_or_octet_stream()
         .to_string();
 
-    upload_r2_object_bytes(bucket_name, key, bytes, Some(content_type), cache_control).await
+    let (client, account_id) = client_and_account().await?;
+    let url = format!(
+        "accounts/{account_id}/r2/buckets/{bucket_name}/objects/{}",
+        urlencoding::encode(&key)
+    );
+
+    emit_upload_progress(&app, &upload_id, &bucket_name, &key, 0, total_bytes);
+
+    let stream_app = app.clone();
+    let stream_upload_id = upload_id.clone();
+    let stream_bucket_name = bucket_name.clone();
+    let stream_key = key.clone();
+    let mut bytes_sent = 0u64;
+    let stream = FramedRead::new(file, BytesCodec::new()).map(move |chunk| {
+        let chunk = chunk?;
+        if is_upload_cancelled(&stream_upload_id) {
+            return Err(io::Error::new(io::ErrorKind::Interrupted, "Upload canceled."));
+        }
+        bytes_sent += chunk.len() as u64;
+        emit_upload_progress(
+            &stream_app,
+            &stream_upload_id,
+            &stream_bucket_name,
+            &stream_key,
+            bytes_sent,
+            total_bytes,
+        );
+        Ok::<_, io::Error>(chunk.freeze())
+    });
+
+    let mut request = client
+        .put(&url)
+        .header(CONTENT_TYPE, content_type)
+        .header(CONTENT_LENGTH, total_bytes)
+        .body(reqwest::Body::wrap_stream(stream));
+
+    if let Some(cache_control) = cache_control.filter(|value| !value.trim().is_empty()) {
+        request = request.header(CACHE_CONTROL, cache_control);
+    }
+
+    let resp = request.send().await.map_err(|e| {
+        if is_upload_cancelled(&upload_id) {
+            clear_cancelled_upload(&upload_id);
+            "Upload canceled.".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
+
+    if is_upload_cancelled(&upload_id) {
+        clear_cancelled_upload(&upload_id);
+        return Err("Upload canceled.".to_string());
+    }
+
+    let result = parse_empty_cf_response(resp, "Upload object").await;
+    if result.is_ok() {
+        emit_upload_progress(&app, &upload_id, &bucket_name, &key, total_bytes, total_bytes);
+    }
+    clear_cancelled_upload(&upload_id);
+    result
 }
 
 #[tauri::command]
@@ -200,10 +325,13 @@ pub async fn upload_r2_remote_url(
 
 #[tauri::command]
 pub async fn cancel_upload_r2_object(
-    _upload_id: String,
+    upload_id: String,
     _bucket_name: String,
     _key: String,
 ) -> Result<(), String> {
+    if let Ok(mut cancelled) = CANCELLED_UPLOADS.lock() {
+        cancelled.insert(upload_id);
+    }
     Ok(())
 }
 

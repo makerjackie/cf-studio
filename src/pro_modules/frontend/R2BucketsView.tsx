@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { readImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { readDir, readFile, stat } from "@tauri-apps/plugin-fs";
@@ -53,6 +54,7 @@ import { useR2Buckets } from "@/hooks/useCloudflare";
 import {
   cacheR2ObjectPreview,
   cacheR2PublicThumbnail,
+  cancelUploadR2Object,
   copyR2Object,
   deleteR2Object,
   downloadR2Object,
@@ -124,9 +126,19 @@ interface TransferItem {
   kind: "upload" | "download";
   key: string;
   label: string;
+  bucketName?: string;
   status: TransferStatus;
   progress: number;
   error?: string;
+}
+
+interface R2UploadProgressEvent {
+  upload_id: string;
+  bucket_name: string;
+  key: string;
+  bytes_sent: number;
+  total_bytes: number;
+  progress: number;
 }
 
 interface ObjectActionState {
@@ -1036,6 +1048,34 @@ export function R2BucketsView() {
     setTransfers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }, []);
 
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    listen<R2UploadProgressEvent>("r2-upload-progress", (event) => {
+      updateTransfer(event.payload.upload_id, {
+        bucketName: event.payload.bucket_name,
+        key: event.payload.key,
+        progress: Math.max(0, Math.min(99, Math.round(event.payload.progress))),
+      });
+    }).then((dispose) => {
+      unsubscribe = dispose;
+    }).catch((err) => {
+      console.warn("[CF Studio] Could not listen for R2 upload progress:", err);
+    });
+    return () => {
+      unsubscribe?.();
+    };
+  }, [updateTransfer]);
+
+  const cancelTransfer = useCallback(async (item: TransferItem) => {
+    if (item.kind !== "upload" || item.status !== "running") return;
+    try {
+      await cancelUploadR2Object(item.id, item.bucketName || selectedBucket?.name || "", item.key);
+      updateTransfer(item.id, { status: "failed", error: t("r2.uploadCancelled") });
+    } catch (err) {
+      toast({ title: t("r2.objectActionFailed"), description: String(err), variant: "destructive" });
+    }
+  }, [selectedBucket?.name, t, toast, updateTransfer]);
+
   const buildUploadPrefix = useCallback(() => {
     return makeUploadPrefix(prefix, uploadPrefixInput, useDatePrefix);
   }, [prefix, uploadPrefixInput, useDatePrefix]);
@@ -1175,6 +1215,7 @@ export function R2BucketsView() {
         for (const item of preparedUploads) {
           const transferId = addTransfer({
             kind: "upload",
+            bucketName: selectedBucket.name,
             key: item.key,
             label: fileNameFromKey(item.key),
           });
@@ -1182,7 +1223,7 @@ export function R2BucketsView() {
           try {
             updateTransfer(transferId, { status: "running", progress: 20 });
             if (item.source.localPath) {
-              await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, crypto.randomUUID(), cacheControl.trim() || undefined);
+              await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, transferId, cacheControl.trim() || undefined);
             } else if (item.source.file) {
               const buffer = await item.source.file.arrayBuffer();
               const bytes = Array.from(new Uint8Array(buffer));
@@ -2165,9 +2206,16 @@ export function R2BucketsView() {
                   </div>
                   {item.error && <p className="mt-1 truncate text-destructive">{item.error}</p>}
                 </div>
-                <Badge variant={item.status === "failed" ? "destructive" : "secondary"} className="text-[10px]">
-                  {t(transferStatusKey(item.status))}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  {item.kind === "upload" && item.status === "running" && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => cancelTransfer(item)} title={t("common.cancel")}>
+                      <X size={13} />
+                    </Button>
+                  )}
+                  <Badge variant={item.status === "failed" ? "destructive" : "secondary"} className="text-[10px]">
+                    {t(transferStatusKey(item.status))}
+                  </Badge>
+                </div>
               </div>
             ))}
           </div>

@@ -108,13 +108,17 @@ export function putKVEntry(
   namespaceId: string,
   keyName: string,
   value: string,
-  expirationTtl?: number
+  expirationTtl?: number,
+  expiration?: string,
+  metadata?: unknown
 ): Promise<void> {
   return invokeCloudflare<void>("put_kv_entry", {
     namespaceId,
     keyName,
     value,
     expirationTtl,
+    expiration,
+    metadata,
   });
 }
 

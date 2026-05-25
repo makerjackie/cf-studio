@@ -1,4 +1,4 @@
-use reqwest::header::CONTENT_TYPE;
+use reqwest::{header::CONTENT_TYPE, multipart};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -407,6 +407,8 @@ pub async fn put_kv_entry(
     key_name: String,
     value: String,
     expiration_ttl: Option<u64>,
+    expiration: Option<String>,
+    metadata: Option<Value>,
 ) -> Result<(), RemoteResourceError> {
     let (client, account_id) = client_and_account().await?;
     let encoded_key = urlencoding::encode(&key_name);
@@ -415,14 +417,32 @@ pub async fn put_kv_entry(
     if let Some(ttl) = expiration_ttl.filter(|ttl| *ttl > 0) {
         endpoint.push_str("?expiration_ttl=");
         endpoint.push_str(&ttl.to_string());
+    } else if let Some(expiration) = expiration
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()))
+    {
+        endpoint.push_str("?expiration=");
+        endpoint.push_str(expiration);
     }
 
-    let response = client
-        .put(&endpoint)
-        .header(CONTENT_TYPE, "text/plain; charset=utf-8")
-        .body(value)
-        .send()
-        .await?;
+    let request = client.put(&endpoint);
+    let response = if let Some(metadata) = metadata {
+        request
+            .multipart(
+                multipart::Form::new()
+                    .text("value", value)
+                    .text("metadata", metadata.to_string()),
+            )
+            .send()
+            .await?
+    } else {
+        request
+            .header(CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(value)
+            .send()
+            .await?
+    };
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
 

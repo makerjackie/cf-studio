@@ -106,8 +106,8 @@ export function LocalExplorerView() {
           </div>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             `/cdn-cgi/explorer/api` exposes an OpenAPI spec for local binding
-            data. It is useful for tools and coding agents that need structured
-            local development data.
+            data. It is useful for automation tools that need structured local
+            development data.
           </p>
         </div>
       </section>

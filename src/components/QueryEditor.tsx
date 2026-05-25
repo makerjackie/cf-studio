@@ -7,8 +7,9 @@
 import { useState, useRef, useCallback, useMemo, useEffect, type KeyboardEvent } from "react";
 import {
   Play, Loader2, AlertCircle, CheckCircle2,
-  RotateCcw, Sparkles, ChevronLeft, ChevronRight
+  RotateCcw, Sparkles, ChevronLeft, ChevronRight, Copy
 } from "lucide-react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +30,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { useQueryExecutor } from "@/hooks/useQueryExecutor";
 import { IntelligencePanel } from "@/components/IntelligencePanel";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { rowsToFormat, type TabularExportFormat } from "@/lib/tabularExport";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -213,6 +215,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
 
   const [sql, setSql] = useState(`SELECT * FROM ${dynamicTemplateData.table} LIMIT 50;`);
   const [status, setStatus] = useState<QueryStatus>({ kind: "idle" });
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const activeAccount = useAppStore(state => state.activeAccount);
   const executor = useQueryExecutor(databaseId);
@@ -324,6 +327,17 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
   };
 
   const isRunning = status.kind === "running";
+
+  const copyResults = async (format: TabularExportFormat) => {
+    if (status.kind !== "select") return;
+    try {
+      await writeText(rowsToFormat(status.rows, status.columns, format), { label: "CF Studio" });
+      setCopyStatus(t(format === "csv" ? "d1.query.copiedCsv" : "d1.query.copiedJson"));
+      window.setTimeout(() => setCopyStatus(null), 1800);
+    } catch (copyError) {
+      setCopyStatus(String(copyError));
+    }
+  };
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -499,11 +513,22 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
         {status.kind === "select" && (
           <div className="flex flex-col h-full min-h-0">
             {/* Results header */}
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/20 shrink-0">
+            <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-border bg-muted/20 shrink-0">
               <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
               <span className="text-xs text-muted-foreground">
                 {t(status.rows.length === 1 ? "d1.query.rowReturned" : "d1.query.rowsReturned", { count: status.rows.length })}
               </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => copyResults("csv")}>
+                  <Copy size={12} />
+                  {t("d1.query.copyCsv")}
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => copyResults("json")}>
+                  <Copy size={12} />
+                  {t("d1.query.copyJson")}
+                </Button>
+              </div>
+              {copyStatus && <span className="text-[10px] text-muted-foreground">{copyStatus}</span>}
 
               {status.duration != null && (
                 <Badge variant="secondary" className="font-mono text-[10px] ml-auto">

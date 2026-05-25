@@ -56,6 +56,7 @@ export function KVNamespacesView() {
   const [valueDraft, setValueDraft] = useState("");
   const [keyDraft, setKeyDraft] = useState("");
   const [ttlDraft, setTtlDraft] = useState("");
+  const [clearTtlOnSave, setClearTtlOnSave] = useState(false);
   const [status, setStatus] = useState<"idle" | "loading" | "saving" | "deleting">("idle");
   const [keyStatus, setKeyStatus] = useState<"idle" | "loading">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +116,7 @@ export function KVNamespacesView() {
         setValueDraft(data.value);
         setKeyDraft(data.key);
         setTtlDraft("");
+        setClearTtlOnSave(false);
         setKeyStatus("idle");
       } catch (loadError) {
         setError(String(loadError));
@@ -149,7 +151,14 @@ export function KVNamespacesView() {
     setError(null);
     setMessage(null);
     try {
-      await putKVEntry(selectedNamespaceId, keyDraft.trim(), valueDraft, ttl);
+      await putKVEntry(
+        selectedNamespaceId,
+        keyDraft.trim(),
+        valueDraft,
+        ttl,
+        ttl === undefined && !clearTtlOnSave ? entry?.expiration : undefined,
+        entry?.metadata
+      );
       setMessage("KV entry saved.");
       await loadKeys("reset");
       await loadEntry(keyDraft.trim());
@@ -315,6 +324,7 @@ export function KVNamespacesView() {
                 setKeyDraft(prefix);
                 setValueDraft("");
                 setTtlDraft("");
+                setClearTtlOnSave(false);
               }}
             >
               <Plus size={14} className="mr-2" />
@@ -331,6 +341,17 @@ export function KVNamespacesView() {
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">TTL seconds</label>
                 <Input value={ttlDraft} onChange={(event) => setTtlDraft(event.target.value.replace(/[^\d]/g, ""))} placeholder="Optional" />
+                {entry?.expiration && (
+                  <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={clearTtlOnSave}
+                      onChange={(event) => setClearTtlOnSave(event.target.checked)}
+                      disabled={Boolean(ttlDraft.trim())}
+                    />
+                    Clear current TTL on save
+                  </label>
+                )}
               </div>
             </div>
 
@@ -379,6 +400,10 @@ export function KVNamespacesView() {
                 <Button variant="outline" onClick={() => writeText(valueDraft, { label: "CF Studio" })}>
                   <Clipboard size={14} className="mr-2" />
                   Copy value
+                </Button>
+                <Button variant="outline" onClick={() => writeText(keyDraft || selectedKey || "", { label: "CF Studio" })} disabled={!keyDraft && !selectedKey}>
+                  <Clipboard size={14} className="mr-2" />
+                  Copy key
                 </Button>
               </div>
               <div className="flex gap-2">
