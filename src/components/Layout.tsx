@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { DatabasesView } from "@/components/DatabasesView";
 import { SettingsView } from "@/components/SettingsView";
+import { PermissionsView } from "@/components/PermissionsView";
 import {
   Database,
   KeyRound,
@@ -21,6 +22,7 @@ import {
   Zap,
   Mail,
   ScanSearch,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, type Theme } from "@/components/ThemeProvider";
@@ -368,6 +370,7 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
   if (activeId === "d1") return <DatabasesView />;
   if (activeId === "r2") return <R2BucketsView />;
   if (activeId === "kv") return <KVNamespacesView />;
+  if (activeId === "permissions") return <PermissionsView />;
   if (activeId === "settings") return <SettingsView />;
   if (activeId === "audit") return <Overview onNavigate={onNavigate} />;
   if (activeId === "audit-scanner") return <DomainScanner onNavigate={onNavigate} />;
@@ -439,6 +442,7 @@ export function Layout() {
             disabled: true,
             badge: t("common.soon"),
           },
+          { id: "permissions", label: t("nav.permissions"), icon: ShieldCheck },
           { id: "settings", label: t("nav.settings"), icon: Settings },
         ],
       },

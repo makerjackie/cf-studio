@@ -24,3 +24,42 @@ pub fn probe_command(bin: &str) -> String {
         "command -v {bin} >/dev/null 2>&1 && {bin} --version >/dev/null 2>&1"
     ))
 }
+
+pub fn read_shell_var(name: &str) -> Option<String> {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+    {
+        return None;
+    }
+
+    let output = if cfg!(target_os = "windows") {
+        std::process::Command::new("cmd")
+            .args(["/c", &format!("echo %{name}%")])
+            .output()
+            .ok()?
+    } else {
+        let (shell, login_flag) = login_shell();
+        let command = with_user_path(&format!(
+            r#"for f in "$HOME/.zshrc" "$HOME/.bashrc"; do
+  if [ -f "$f" ]; then . "$f" >/dev/null 2>&1; fi;
+done;
+printf '%s' "${{{name}:-}}""#
+        ));
+        std::process::Command::new(shell)
+            .args([login_flag, "-c", &command])
+            .output()
+            .ok()?
+    };
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() || value == format!("%{name}%") {
+        None
+    } else {
+        Some(value)
+    }
+}

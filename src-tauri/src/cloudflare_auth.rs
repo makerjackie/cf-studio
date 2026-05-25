@@ -9,7 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::cloudflare_client::{CfError, CfResponse, CloudflareClient};
-use crate::shell_env::{login_shell, with_user_path};
+use crate::shell_env::{login_shell, read_shell_var, with_user_path};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -125,9 +125,7 @@ fn wrangler_candidate_paths() -> Vec<PathBuf> {
 
     // Universal fallback: ~/.wrangler/config/default.toml
     if let Some(home) = dirs::home_dir() {
-        candidates.push(
-            home.join(".wrangler").join("config").join("default.toml"),
-        );
+        candidates.push(home.join(".wrangler").join("config").join("default.toml"));
         // Also try the old ~/.config/.wrangler path explicitly
         candidates.push(
             home.join(".config")
@@ -172,8 +170,17 @@ pub fn wrangler_config_path() -> Result<PathBuf, AuthError> {
 fn env_api_token() -> Option<String> {
     std::env::var("CLOUDFLARE_API_TOKEN")
         .ok()
+        .or_else(|| read_shell_var("CLOUDFLARE_API_TOKEN"))
         .map(|token| token.trim().to_string())
         .filter(|token| !token.is_empty())
+}
+
+fn env_account_id() -> Option<String> {
+    std::env::var("CLOUDFLARE_ACCOUNT_ID")
+        .ok()
+        .or_else(|| read_shell_var("CLOUDFLARE_ACCOUNT_ID"))
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
 }
 
 /// Reads and parses the Wrangler config, returning the extracted credentials.
@@ -181,7 +188,7 @@ pub fn read_credentials() -> Result<CloudflareCredentials, AuthError> {
     if let Some(api_token) = env_api_token() {
         return Ok(CloudflareCredentials {
             oauth_token: api_token,
-            account_id: std::env::var("CLOUDFLARE_ACCOUNT_ID").ok(),
+            account_id: env_account_id(),
         });
     }
 
@@ -303,7 +310,10 @@ pub async fn refresh_wrangler_token() -> Result<CloudflareCredentials, AuthError
 
     if !output.status.success() {
         let err_msg = String::from_utf8_lossy(&output.stderr);
-        return Err(AuthError::ExecError(format!("Wrangler failed to refresh token: {}", err_msg)));
+        return Err(AuthError::ExecError(format!(
+            "Wrangler failed to refresh token: {}",
+            err_msg
+        )));
     }
 
     // Re-read the credentials now that Wrangler has updated the config file
@@ -374,7 +384,7 @@ pub async fn run_wrangler_logout() -> Result<(), AuthError> {
 }
 
 pub fn start_wrangler_watcher(app: tauri::AppHandle) {
-    use notify::{Watcher, RecursiveMode};
+    use notify::{RecursiveMode, Watcher};
     use std::sync::mpsc::channel;
     use std::time::Duration;
     use tauri::Emitter;
@@ -392,11 +402,11 @@ pub fn start_wrangler_watcher(app: tauri::AppHandle) {
         if let Some(mut path) = dirs::home_dir() {
             path.push(".wrangler");
             path.push("config");
-            
+
             if !path.exists() {
                 let _ = std::fs::create_dir_all(&path);
             }
-            
+
             if watcher.watch(&path, RecursiveMode::NonRecursive).is_err() {
                 eprintln!("Failed to watch wrangler config dir");
                 return;
@@ -408,7 +418,7 @@ pub fn start_wrangler_watcher(app: tauri::AppHandle) {
                         let is_default_toml = event.paths.iter().any(|p| {
                             p.file_name().and_then(|n| n.to_str()) == Some("default.toml")
                         });
-                        
+
                         if is_default_toml {
                             std::thread::sleep(Duration::from_millis(300));
                             if read_credentials().is_ok() {
@@ -417,7 +427,7 @@ pub fn start_wrangler_watcher(app: tauri::AppHandle) {
                                 let _ = app.emit("wrangler-session-deleted", ());
                             }
                         }
-                    },
+                    }
                     Err(e) => eprintln!("watch error: {:?}", e),
                 }
             }
@@ -467,8 +477,14 @@ mod tests {
         // The home directory itself is environment-dependent.
         if let Ok(p) = wrangler_config_path() {
             let s = p.to_string_lossy();
-            assert!(s.contains(".wrangler"), "path should contain .wrangler: {s}");
-            assert!(s.ends_with("default.toml"), "path should end with default.toml: {s}");
+            assert!(
+                s.contains(".wrangler"),
+                "path should contain .wrangler: {s}"
+            );
+            assert!(
+                s.ends_with("default.toml"),
+                "path should end with default.toml: {s}"
+            );
         }
     }
 

@@ -5,7 +5,7 @@
 // should obtain a client through `CloudflareClient::new()`.
 
 use reqwest::{
-    header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, USER_AGENT},
+    header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT},
     Client, ClientBuilder,
 };
 use serde::Deserialize;
@@ -50,7 +50,6 @@ impl CloudflareClient {
             .expect("oauth_token must be a valid ASCII string");
 
         headers.insert(AUTHORIZATION, auth_value);
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         headers.insert(USER_AGENT, HeaderValue::from_static(USER_AGENT_STR));
 
         let inner = ClientBuilder::new()
