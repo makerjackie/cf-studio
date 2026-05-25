@@ -250,6 +250,7 @@ function R2Thumbnail({
       alt={alt}
       className={cn("h-9 w-9 shrink-0 rounded-md border border-border object-cover", className)}
       loading="lazy"
+      onError={() => setSrc(null)}
     />
   );
 }
@@ -312,6 +313,7 @@ function R2PreviewImage({
       src={src}
       alt={object.key}
       className="max-h-[68vh] max-w-full rounded-md object-contain"
+      onError={() => setFailed(true)}
     />
   );
 }
