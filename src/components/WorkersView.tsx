@@ -697,7 +697,7 @@ function WorkerDetailView({
             )}
             <Button variant="outline" size="sm" onClick={() => open(dashboardUrl(detail.account_id, workerName))}>
               <ExternalLink size={14} className="mr-2" />
-              Dashboard
+              Worker dashboard
             </Button>
             <Button variant="ghost" size="icon" onClick={onRefresh} disabled={loading}>
               {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
@@ -719,6 +719,7 @@ function WorkerDetailView({
           <TabsTrigger value="secrets">Secrets</TabsTrigger>
           <TabsTrigger value="domains">Domains & Routes</TabsTrigger>
           <TabsTrigger value="cron">Cron Triggers</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-0 grid gap-4 xl:grid-cols-2">
@@ -853,7 +854,7 @@ function WorkerDetailView({
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={() => open(dashboardUrl(detail.account_id, workerName))}>
                       <ExternalLink size={14} className="mr-2" />
-                      Open Dashboard
+                      Open Worker dashboard
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => open(WORKERS_METRICS_DOCS_URL)}>
                       Docs
@@ -954,6 +955,10 @@ function WorkerDetailView({
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => open(WORKERS_LOGS_DOCS_URL)}>
                     Logs docs
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => open(dashboardUrl(detail.account_id, workerName))}>
+                    <ExternalLink size={14} className="mr-2" />
+                    Open Observability
                   </Button>
                 </div>
                 {tailResult !== null && (
@@ -1226,6 +1231,37 @@ function WorkerDetailView({
               </div>
             ))
           )}
+        </TabsContent>
+
+        <TabsContent value="settings" className="mt-0 grid gap-4 xl:grid-cols-2">
+          <SectionError section={detail.settings} />
+          <SectionError section={detail.script_settings} />
+          <div className="rounded-lg border border-border bg-background p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">Worker settings</h3>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  Read-only configuration returned by Cloudflare for this Worker.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => open(dashboardUrl(detail.account_id, workerName))}>
+                <ExternalLink size={14} className="mr-2" />
+                Dashboard
+              </Button>
+            </div>
+            <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
+              {JSON.stringify(detail.settings.data ?? {}, null, 2)}
+            </pre>
+          </div>
+          <div className="rounded-lg border border-border bg-background p-4">
+            <h3 className="text-sm font-semibold">Script settings</h3>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
+              Observability edits use this settings endpoint and preserve unrelated fields.
+            </p>
+            <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
+              {JSON.stringify(detail.script_settings.data ?? {}, null, 2)}
+            </pre>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
