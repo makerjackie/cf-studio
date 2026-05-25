@@ -83,12 +83,12 @@ export function SettingsView() {
 
   const handleLogout = async () => {
     const confirmed = await ask(
-      "Are you sure you want to log out? This will clear your local cache and sign you out from the Cloudflare Wrangler session on this machine.",
+      t("settings.logoutConfirmBody"),
       {
-        title: "Confirm Logout",
+        title: t("settings.logoutConfirmTitle"),
         kind: "warning",
-        okLabel: "Log Out",
-        cancelLabel: "Cancel",
+        okLabel: t("settings.signOut"),
+        cancelLabel: t("common.cancel"),
       }
     );
 
@@ -105,8 +105,8 @@ export function SettingsView() {
         clearCache();
 
         toast({
-          title: "Logged Out Successfully",
-          description: "Your session has been cleared.",
+          title: t("settings.logoutSuccess"),
+          description: t("settings.logoutSuccessDesc"),
         });
 
         // 4. Force reload to ensure everything is reset
@@ -115,8 +115,8 @@ export function SettingsView() {
         }, 1000);
       } catch (e: any) {
         toast({
-          title: "Logout Error",
-          description: String(e) || "Failed to log out properly.",
+          title: t("settings.logoutError"),
+          description: String(e) || t("settings.logoutErrorDesc"),
           variant: "destructive",
         });
       } finally {
@@ -145,12 +145,12 @@ export function SettingsView() {
   useEffect(() => {
     if (error && status === "error") {
       toast({
-        title: "Update Failed",
+        title: t("settings.updateFailed"),
         description: error,
         variant: "destructive",
       });
     }
-  }, [error, status, toast]);
+  }, [error, language, status, toast]);
 
   const handleRefreshConnection = async () => {
     setIsRefreshing(true);
@@ -230,6 +230,18 @@ export function SettingsView() {
     if (!update) return null;
     return changelogsData.find(c => c.version === update.version);
   }, [update]);
+
+  const formatChangelogDate = (date: string) =>
+    new Date(date).toLocaleDateString(language, { month: "long", day: "numeric", year: "numeric" });
+
+  const getChangelogItems = (
+    log: { features?: string[]; fixes?: string[]; featuresZh?: string[]; fixesZh?: string[] },
+    type: "features" | "fixes"
+  ) => {
+    const localized = type === "features" ? log.featuresZh : log.fixesZh;
+    const fallback = type === "features" ? log.features : log.fixes;
+    return language === "zh-CN" && localized ? localized : fallback ?? [];
+  };
 
   return (
     <ScrollArea className="h-full">
@@ -462,15 +474,15 @@ export function SettingsView() {
             <TabsContent value="appearance" className="m-0 space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
               <Card className="border-none shadow-md bg-muted/20">
                 <CardHeader>
-                  <CardTitle className="text-lg">Theme</CardTitle>
-                  <CardDescription>Choose your preferred interface style.</CardDescription>
+                  <CardTitle className="text-lg">{t("settings.theme")}</CardTitle>
+                  <CardDescription>{t("settings.themeDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-3 gap-4">
                     {[
-                      { value: "light", label: "Light", icon: Sun, color: "bg-orange-500/10 text-orange-500" },
-                      { value: "dark", label: "Dark", icon: Moon, color: "bg-blue-500/10 text-blue-500" },
-                      { value: "system", label: "System", icon: Monitor, color: "bg-zinc-500/10 text-zinc-500" },
+                      { value: "light", label: t("theme.light"), icon: Sun, color: "bg-orange-500/10 text-orange-500" },
+                      { value: "dark", label: t("theme.dark"), icon: Moon, color: "bg-blue-500/10 text-blue-500" },
+                      { value: "system", label: t("theme.system"), icon: Monitor, color: "bg-zinc-500/10 text-zinc-500" },
                     ].map(({ value, label, icon: Icon, color }) => (
                       <button
                         key={value}
@@ -495,16 +507,16 @@ export function SettingsView() {
 
               <Card className="border-none shadow-md bg-muted/20">
                 <CardHeader>
-                  <CardTitle className="text-lg">Listings & Tables</CardTitle>
-                  <CardDescription>Optimize how data is displayed.</CardDescription>
+                  <CardTitle className="text-lg">{t("settings.listingsTables")}</CardTitle>
+                  <CardDescription>{t("settings.listingsTablesDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-3">
-                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Row Density</Label>
+                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("settings.rowDensity")}</Label>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { value: "comfortable", label: "Comfortable", desc: "More whitespace" },
-                        { value: "compact", label: "Compact", desc: "More rows" },
+                        { value: "comfortable", label: t("settings.densityComfortable"), desc: t("settings.densityComfortableDesc") },
+                        { value: "compact", label: t("settings.densityCompact"), desc: t("settings.densityCompactDesc") },
                       ].map(({ value, label, desc }) => (
                         <button
                           key={value}
@@ -525,8 +537,8 @@ export function SettingsView() {
 
                   <div className="flex items-center justify-between pt-4 border-t border-border/50">
                     <div className="space-y-1">
-                      <Label className="text-sm font-medium">Show Column Counts</Label>
-                      <p className="text-xs text-muted-foreground font-mono italic">Show table column metrics in sidebar</p>
+                      <Label className="text-sm font-medium">{t("settings.showColumnCounts")}</Label>
+                      <p className="text-xs text-muted-foreground font-mono italic">{t("settings.showColumnCountsDesc")}</p>
                     </div>
                     <Switch checked={showTableColumnCounts} onCheckedChange={setShowTableColumnCounts} />
                   </div>
@@ -538,15 +550,15 @@ export function SettingsView() {
             <TabsContent value="d1" className="m-0 space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
               <Card className="border-none shadow-md bg-muted/20">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-lg">Query History</CardTitle>
-                  <CardDescription>Control whether D1 query results are stored in history.</CardDescription>
+                  <CardTitle className="text-lg">{t("settings.queryHistory")}</CardTitle>
+                  <CardDescription>{t("settings.queryHistoryDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">
-                      <Label className="text-sm font-medium">Save Query Results</Label>
+                      <Label className="text-sm font-medium">{t("settings.saveQueryResults")}</Label>
                       <p className="text-xs text-muted-foreground">
-                        Store result rows alongside each history entry for later review.
+                        {t("settings.saveQueryResultsDesc")}
                       </p>
                     </div>
                     <Switch
@@ -558,9 +570,9 @@ export function SettingsView() {
                   <div className={cn("grid gap-4 transition-all duration-300", !saveQueryResultsEnabled && "opacity-40 grayscale pointer-events-none")}>
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-1">
-                        <Label className="text-sm font-medium">Rows Saved Per Query</Label>
+                        <Label className="text-sm font-medium">{t("settings.rowsSavedPerQuery")}</Label>
                         <p className="text-xs text-muted-foreground">
-                          Limit how many rows are stored for each query result.
+                          {t("settings.rowsSavedPerQueryDesc")}
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
@@ -578,10 +590,10 @@ export function SettingsView() {
                             className="h-9 w-24 text-right"
                             disabled={saveQueryResultsRowLimit == null}
                           />
-                          <span className="text-xs text-muted-foreground">rows</span>
+                          <span className="text-xs text-muted-foreground">{t("settings.rowsUnit")}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Label className="text-xs text-muted-foreground">No limit</Label>
+                          <Label className="text-xs text-muted-foreground">{t("settings.noLimit")}</Label>
                           <Switch
                             checked={saveQueryResultsRowLimit == null}
                             onCheckedChange={(checked) =>
@@ -595,7 +607,7 @@ export function SettingsView() {
                     <div className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-amber-600">
                       <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                       <p className="text-xs">
-                        Saving query results increases local app size over time. Large result sets can grow storage quickly.
+                        {t("settings.queryResultsStorageWarning")}
                       </p>
                     </div>
 
@@ -603,7 +615,7 @@ export function SettingsView() {
                       <div className="flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-red-500">
                         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                         <p className="text-xs">
-                          No limit can consume a lot of disk space. Use with caution.
+                          {t("settings.noLimitStorageWarning")}
                         </p>
                       </div>
                     )}
@@ -618,8 +630,8 @@ export function SettingsView() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle className="text-lg">Privacy Shield</CardTitle>
-                      <CardDescription>Obfuscate sensitive project data from prying eyes.</CardDescription>
+                      <CardTitle className="text-lg">{t("settings.privacyShield")}</CardTitle>
+                      <CardDescription>{t("settings.privacyShieldDesc")}</CardDescription>
                     </div>
                     <Switch checked={privacySettings.enabled} onCheckedChange={(c) => setPrivacySettings({ enabled: c })} />
                   </div>
@@ -627,12 +639,12 @@ export function SettingsView() {
                 <CardContent className="space-y-6">
                    <div className={cn("grid gap-4 transition-all duration-300", !privacySettings.enabled && "opacity-40 grayscale pointer-events-none")}>
                       {[
-                        { id: "accountInfo", label: "Account Name & Email", desc: "Blurs identifying account details" },
-                        { id: "databaseNames", label: "Database Names", desc: "Obfuscates D1 database identifiers" },
-                        { id: "databaseIds", label: "Database IDs", desc: "Hides unique resource UUIDs" },
-                        { id: "tableNames", label: "Table Names", desc: "Blurs names in the explorer" },
-                        { id: "r2BucketNames", label: "R2 Bucket Names", desc: "Hides storage bucket identifiers" },
-                        { id: "r2FileNames", label: "R2 File/Object Names", desc: "Obfuscates object keys in listings" },
+                        { id: "accountInfo", label: t("settings.privacyAccountInfo"), desc: t("settings.privacyAccountInfoDesc") },
+                        { id: "databaseNames", label: t("settings.privacyDatabaseNames"), desc: t("settings.privacyDatabaseNamesDesc") },
+                        { id: "databaseIds", label: t("settings.privacyDatabaseIds"), desc: t("settings.privacyDatabaseIdsDesc") },
+                        { id: "tableNames", label: t("settings.privacyTableNames"), desc: t("settings.privacyTableNamesDesc") },
+                        { id: "r2BucketNames", label: t("settings.privacyR2BucketNames"), desc: t("settings.privacyR2BucketNamesDesc") },
+                        { id: "r2FileNames", label: t("settings.privacyR2FileNames"), desc: t("settings.privacyR2FileNamesDesc") },
                       ].map((item) => (
                         <div key={item.id} className="flex items-center space-x-3 p-3 rounded-lg hover:bg-background/40 transition-colors">
                           <Checkbox 
@@ -651,13 +663,13 @@ export function SettingsView() {
                         <div className="space-y-4">
                           <div className="flex items-center justify-between">
                             <div className="space-y-0.5">
-                              <Label className="text-sm font-medium">Blur Intensity</Label>
-                              <p className="text-xs text-muted-foreground">Adjust how much the sensitive data is blurred.</p>
+                              <Label className="text-sm font-medium">{t("settings.blurIntensity")}</Label>
+                              <p className="text-xs text-muted-foreground">{t("settings.blurIntensityDesc")}</p>
                             </div>
                             <Badge variant="secondary" className="font-mono">{privacySettings.blurAmount}px</Badge>
                           </div>
                           <div className="flex items-center gap-4">
-                            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Low</span>
+                            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">{t("settings.blurLow")}</span>
                             <input 
                               type="range" 
                               min="0" 
@@ -667,25 +679,25 @@ export function SettingsView() {
                               onChange={(e) => setPrivacySettings({ blurAmount: parseInt(e.target.value, 10) })}
                               className="flex-1 h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary border-none focus:ring-1 focus:ring-primary/20"
                             />
-                            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">High</span>
+                            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">{t("settings.blurHigh")}</span>
                           </div>
                         </div>
 
                         <div className="p-6 rounded-2xl bg-muted/30 border border-dashed border-border flex flex-col items-center justify-center gap-4">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1">Privacy Shield Preview</p>
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1">{t("settings.privacyPreview")}</p>
                           <div className="flex flex-col items-center gap-3">
                              <div className="text-2xl font-black tracking-tight relative">
                                 <span style={{ filter: `blur(${privacySettings.blurAmount}px)` }} className="transition-all duration-300">
                                   example-domain.com
                                 </span>
                                 {privacySettings.blurAmount === 0 && (
-                                   <span className="absolute -top-6 -right-6 text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full font-bold animate-bounce border border-red-500/20">Visible</span>
+                                   <span className="absolute -top-6 -right-6 text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full font-bold animate-bounce border border-red-500/20">{t("settings.visible")}</span>
                                 )}
                              </div>
                              <p className="text-xs text-muted-foreground italic max-w-[200px] text-center">
                                {privacySettings.blurAmount > 0 
-                                 ? "Sensitive domain names will look like this across the app." 
-                                 : "Blur is disabled. Data will be fully visible."}
+                                 ? t("settings.privacyPreviewBlurred")
+                                 : t("settings.privacyPreviewVisible")}
                              </p>
                           </div>
                         </div>
@@ -701,11 +713,11 @@ export function SettingsView() {
                 <CardHeader className="pb-0">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
-                      <CardTitle className="text-lg">Software Updates</CardTitle>
-                      <CardDescription>Keep your studio up to date with the latest features.</CardDescription>
+                      <CardTitle className="text-lg">{t("settings.softwareUpdates")}</CardTitle>
+                      <CardDescription>{t("settings.softwareUpdatesDesc")}</CardDescription>
                     </div>
                     <Badge variant={status === "available" ? "default" : "secondary"} className="rounded-full px-3">
-                      {status === "available" ? "Update Available" : status === "checking" ? "Checking..." : "Up to date"}
+                      {status === "available" ? t("settings.updateAvailable") : status === "checking" ? t("settings.checking") : t("settings.upToDate")}
                     </Badge>
                   </div>
                 </CardHeader>
@@ -713,7 +725,7 @@ export function SettingsView() {
                   <div className="flex flex-col items-center justify-center py-6 space-y-6 border-b border-border/50 pb-8">
                     <div className="flex items-center gap-8 md:gap-12 text-center">
                       <div className="space-y-1">
-                        <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">Current Version</p>
+                        <p className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest">{t("settings.currentVersion")}</p>
                         <p className="text-2xl font-mono font-bold">{appVersion.version.replace(/^v/, "")}</p>
                       </div>
 
@@ -721,7 +733,7 @@ export function SettingsView() {
                         <>
                           <ArrowRight className="text-muted-foreground/30" />
                           <div className="space-y-1">
-                            <p className="text-[10px] uppercase font-bold text-primary tracking-widest">Newest Version</p>
+                            <p className="text-[10px] uppercase font-bold text-primary tracking-widest">{t("settings.newestVersion")}</p>
                             <p className="text-2xl font-mono font-bold">{update?.version?.replace(/^v/, "")}</p>
                           </div>
                         </>
@@ -734,7 +746,7 @@ export function SettingsView() {
                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                               <div className="h-full bg-primary transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
                            </div>
-                           <p className="text-xs text-center font-medium text-primary">Installing update... {downloadProgress}%</p>
+                           <p className="text-xs text-center font-medium text-primary">{t("settings.installingUpdate", { progress: downloadProgress })}</p>
                         </div>
                       ) : (
                         <Button 
@@ -753,17 +765,17 @@ export function SettingsView() {
                           {status === "checking" ? (
                             <>
                               <RefreshCw size={18} className="mr-2 animate-spin" />
-                              Checking...
+                              {t("settings.checking")}
                             </>
                           ) : status === "available" ? (
                             <>
                               <Download size={18} className="mr-2" />
-                              {update?.isManualDetection ? "Download Update" : "Install Update"}
+                              {update?.isManualDetection ? t("settings.downloadUpdate") : t("settings.installUpdate")}
                             </>
                           ) : (
                             <>
                               <RefreshCw size={18} className="mr-2" />
-                              Check for Updates
+                              {t("settings.checkForUpdates")}
                             </>
                           )}
                         </Button>
@@ -775,14 +787,14 @@ export function SettingsView() {
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold flex items-center gap-2">
                          <CheckCircle2 size={16} className="text-primary" />
-                         Changelog for {update?.version || appVersion.version}
+                         {t("settings.changelogFor", { version: update?.version || appVersion.version })}
                       </h3>
                       
                       <Dialog>
                         <DialogTrigger asChild>
                           <Button variant="ghost" size="sm" className="h-8 text-xs font-semibold gap-1.5 hover:bg-primary/5 hover:text-primary transition-all">
                             <History size={14} />
-                            Full History
+                            {t("settings.fullHistory")}
                           </Button>
                         </DialogTrigger>
                         <DialogContent className="max-w-4xl p-0 overflow-hidden !gap-0">
@@ -792,10 +804,10 @@ export function SettingsView() {
                                 <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-sm">
                                   <History size={24} />
                                 </div>
-                                Changelog History
+                                {t("settings.changelogHistory")}
                               </DialogTitle>
                               <DialogDescription className="text-base text-muted-foreground/80">
-                                Every improvement and fix we've made to CF Studio.
+                                {t("settings.changelogHistoryDesc")}
                               </DialogDescription>
                             </div>
                             
@@ -816,21 +828,21 @@ export function SettingsView() {
                                       
                                       <div className="space-y-6">
                                         <div className="flex items-baseline justify-between gap-4 border-b border-border/40 pb-2">
-                                          <h4 className="text-xl font-bold tracking-tight">Version {log.version.replace(/^v/, "")}</h4>
+                                          <h4 className="text-xl font-bold tracking-tight">{t("settings.versionLabel", { version: log.version.replace(/^v/, "") })}</h4>
                                           <span className="text-xs font-mono font-bold text-muted-foreground bg-muted/40 px-3 py-1 rounded-full border border-border/30">
-                                            {new Date(log.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                            {formatChangelogDate(log.date)}
                                           </span>
                                         </div>
                                         
                                         <div className="space-y-6">
-                                          {log.features && log.features.length > 0 && (
+                                          {getChangelogItems(log, "features").length > 0 && (
                                             <div className="space-y-3">
                                               <div className="flex items-center gap-2 text-[11px] font-black text-orange-500 uppercase tracking-[0.25em] opacity-80">
                                                 <Sparkles size={14} strokeWidth={2.5} />
-                                                Features
+                                                {t("settings.features")}
                                               </div>
                                               <div className="space-y-3">
-                                                {log.features.map((f, i) => (
+                                                {getChangelogItems(log, "features").map((f, i) => (
                                                   <div key={i} className="flex gap-4 text-[15px] leading-relaxed text-foreground/90 group">
                                                     <div className="mt-2 h-2 w-2 rounded-full bg-orange-500/20 shrink-0 border border-orange-500/40 transition-colors group-hover:bg-orange-500 group-hover:border-orange-500" />
                                                     <span>{f}</span>
@@ -840,14 +852,14 @@ export function SettingsView() {
                                             </div>
                                           )}
                                           
-                                          {log.fixes && log.fixes.length > 0 && (
+                                          {getChangelogItems(log, "fixes").length > 0 && (
                                             <div className="space-y-3">
                                               <div className="flex items-center gap-2 text-[11px] font-black text-emerald-500 uppercase tracking-[0.25em] opacity-80">
                                                 <Wrench size={14} strokeWidth={2.5} />
-                                                Fixes
+                                                {t("settings.fixes")}
                                               </div>
                                               <div className="space-y-3">
-                                                {log.fixes.map((f, i) => (
+                                                {getChangelogItems(log, "fixes").map((f, i) => (
                                                   <div key={i} className="flex gap-4 text-[15px] leading-relaxed text-foreground/90 group">
                                                     <div className="mt-2 h-2 w-2 rounded-full bg-emerald-500/20 shrink-0 border border-emerald-500/40 transition-colors group-hover:bg-emerald-500 group-hover:border-emerald-500" />
                                                     <span>{f}</span>
@@ -861,7 +873,7 @@ export function SettingsView() {
                                     </div>
                                   ))
                                 ) : (
-                                  <div className="text-center py-10 text-muted-foreground">No history available</div>
+                                  <div className="text-center py-10 text-muted-foreground">{t("settings.noHistory")}</div>
                                 )}
                               </div>
                             </div>
@@ -882,18 +894,18 @@ export function SettingsView() {
                           </div>
                         ) : (() => {
                           const log = nextChangelog || currentChangelog;
-                          if (!log) return <p className="text-xs text-muted-foreground italic">No details available for this version.</p>;
+                          if (!log) return <p className="text-xs text-muted-foreground italic">{t("settings.noVersionDetails")}</p>;
                           
                           return (
                             <div className="space-y-6">
-                              {log.features && log.features.length > 0 && (
+                              {getChangelogItems(log, "features").length > 0 && (
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-[10px] font-black text-orange-500 uppercase tracking-widest">
                                     <Sparkles size={12} strokeWidth={2.5} />
-                                    Features
+                                    {t("settings.features")}
                                   </div>
                                   <div className="space-y-2.5">
-                                    {log.features.map((f, i) => (
+                                    {getChangelogItems(log, "features").map((f, i) => (
                                       <div key={i} className="flex gap-3 text-sm group">
                                         <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-orange-500/30 shrink-0 transition-colors group-hover:bg-orange-500" />
                                         <span className="text-foreground/80 leading-relaxed">{f}</span>
@@ -903,14 +915,14 @@ export function SettingsView() {
                                 </div>
                               )}
                               
-                              {log.fixes && log.fixes.length > 0 && (
+                              {getChangelogItems(log, "fixes").length > 0 && (
                                 <div className="space-y-3">
                                   <div className="flex items-center gap-2 text-[10px] font-black text-emerald-500 uppercase tracking-widest">
                                     <Wrench size={12} strokeWidth={2.5} />
-                                    Fixes
+                                    {t("settings.fixes")}
                                   </div>
                                   <div className="space-y-2.5">
-                                    {log.fixes.map((f, i) => (
+                                    {getChangelogItems(log, "fixes").map((f, i) => (
                                       <div key={i} className="flex gap-3 text-sm group">
                                         <div className="mt-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500/30 shrink-0 transition-colors group-hover:bg-emerald-500" />
                                         <span className="text-foreground/80 leading-relaxed">{f}</span>
@@ -946,12 +958,11 @@ export function SettingsView() {
                   
                   <div className="space-y-2">
                     <h2 className="text-3xl font-black tracking-tight bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text text-transparent">CF Studio</h2>
-                    <p className="text-sm text-muted-foreground font-mono bg-background/50 py-1 px-3 rounded-full border border-border/50 inline-block">version {appVersion.version}</p>
+                    <p className="text-sm text-muted-foreground font-mono bg-background/50 py-1 px-3 rounded-full border border-border/50 inline-block">{t("settings.aboutVersion", { version: appVersion.version })}</p>
                   </div>
                   
                   <p className="text-sm text-muted-foreground max-w-md leading-relaxed">
-                    A high-performance native desktop client for modern Cloudflare workflows. 
-                    Manage D1 databases and R2 storage with speed and elegance.
+                    {t("settings.aboutDescription")}
                   </p>
                   
                   <div className="flex gap-4">
@@ -961,12 +972,12 @@ export function SettingsView() {
                     </Button>
                     <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://cfstudio.dev")}>
                       <ExternalLink className="mr-2 h-4 w-4" />
-                      Website
+                      {t("settings.website")}
                     </Button>
                   </div>
                   
                   <div className="pt-8 text-xs text-muted-foreground opacity-50">
-                    © {new Date().getFullYear()} CF Studio. All rights reserved.
+                    {t("settings.copyright", { year: new Date().getFullYear() })}
                   </div>
                 </CardContent>
               </Card>

@@ -8,9 +8,19 @@
       "Added manual Cloudflare API token storage through macOS Keychain",
       "Moved English and Simplified Chinese translations into maintainable locale files"
     ],
+    "featuresZh": [
+      "新增 R2 上传、下载、图片预览、公开 URL 复制和公开域名状态检查",
+      "新增 D1、R2 和 KV 的 Cloudflare token 权限检查",
+      "新增通过 macOS Keychain 保存 Cloudflare API token",
+      "将英文和简体中文文案整理到可维护的语言文件中"
+    ],
     "fixes": [
       "Improved Finder-launched macOS app environment detection for nvm, Wrangler, and Cloudflare token variables",
       "Updated release metadata and updater checks for the makerjackie fork"
+    ],
+    "fixesZh": [
+      "改进从 Finder 启动 macOS 应用时对 nvm、Wrangler 和 Cloudflare token 环境变量的检测",
+      "更新 makerjackie fork 的发布元数据和更新检查"
     ]
   },
   {
@@ -19,8 +29,14 @@
     "features": [
       "Added Logout feature"
     ],
+    "featuresZh": [
+      "新增退出登录功能"
+    ],
     "fixes": [
       "Improved API token permissions"
+    ],
+    "fixesZh": [
+      "改进 API token 权限处理"
     ]
   },
   {
@@ -29,6 +45,10 @@
     "fixes": [
       "Improved Privacy Blurs",
       "Fixed dark mode"
+    ],
+    "fixesZh": [
+      "改进隐私模糊效果",
+      "修复深色模式"
     ]
   },
   {
@@ -37,16 +57,26 @@
     "features": [
       "Added Audit Export PDF Report feature"
     ],
+    "featuresZh": [
+      "新增审计报告 PDF 导出功能"
+    ],
     "fixes": [
       "Fixed Audit Performance & Security Score"
+    ],
+    "fixesZh": [
+      "修复审计性能和安全评分"
     ]
   },
   {
     "version": "1.1.7",
     "date": "2026-03-31",
     "features": [],
+    "featuresZh": [],
     "fixes": [
       "Fixed R2 Uploading Large files"
+    ],
+    "fixesZh": [
+      "修复 R2 大文件上传问题"
     ]
   },
   {
@@ -55,17 +85,28 @@
     "features": [
       "D1 Query history to include the results in history"
     ],
+    "featuresZh": [
+      "D1 查询历史支持保存查询结果"
+    ],
     "fixes": [
       "Fixed Windows build error",
       "Fixed D1 Query history filter by date"
+    ],
+    "fixesZh": [
+      "修复 Windows 构建错误",
+      "修复 D1 查询历史按日期筛选的问题"
     ]
   },
   {
     "version": "1.1.5",
     "date": "2026-03-29",
     "features": [],
+    "featuresZh": [],
     "fixes": [
       "Fixed Windows build error"
+    ],
+    "fixesZh": [
+      "修复 Windows 构建错误"
     ]
   },
   {
@@ -74,22 +115,34 @@
     "features": [
       "Added D1 Query History feature with statistics to track usage perfectly"
     ],
-    "fixes": []
+    "featuresZh": [
+      "新增带统计信息的 D1 查询历史功能"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.1.2",
     "date": "2026-03-26",
     "features": [],
+    "featuresZh": [],
     "fixes": [
       "Fixed auto-update system"
+    ],
+    "fixesZh": [
+      "修复自动更新系统"
     ]
   },
   {
     "version": "1.1.1",
     "date": "2026-03-26",
     "features": [],
+    "featuresZh": [],
     "fixes": [
       "Minor bug fixes"
+    ],
+    "fixesZh": [
+      "修复若干小问题"
     ]
   },
   {
@@ -98,10 +151,18 @@
     "features": [
       "Integrated auto-update system with real-time download progress"
     ],
+    "featuresZh": [
+      "集成自动更新系统，并显示实时下载进度"
+    ],
     "fixes": [
       "Resolved macOS app translocation and quarantine issues via xattr automation",
       "Fixed TypeScript strictly-unused-variable build errors",
       "Cleaned up legacy updater import and syntax regressions"
+    ],
+    "fixesZh": [
+      "通过 xattr 自动处理解决 macOS 应用转置和隔离问题",
+      "修复 TypeScript 严格未使用变量构建错误",
+      "清理旧更新器导入和语法回退问题"
     ]
   },
   {
@@ -112,9 +173,18 @@
       "Privacy settings to blur sensitive data across UI",
       "D1 table column count visibility toggle"
     ],
+    "featuresZh": [
+      "新增支持自定义行数限制的动态分页",
+      "新增跨界面模糊敏感数据的隐私设置",
+      "新增 D1 数据表列数显示开关"
+    ],
     "fixes": [
       "Updated Rust dependencies",
       "Sync pro_modules submodule"
+    ],
+    "fixesZh": [
+      "更新 Rust 依赖",
+      "同步 pro_modules 子模块"
     ]
   },
   {
@@ -124,8 +194,15 @@
       "D1 index management with dedicated UI dialog",
       "Optimized database metadata fetching"
     ],
+    "featuresZh": [
+      "新增独立对话框形式的 D1 索引管理",
+      "优化数据库元数据获取"
+    ],
     "fixes": [
       "Standardize CSS variables in schema visualizer"
+    ],
+    "fixesZh": [
+      "统一结构可视化器中的 CSS 变量"
     ]
   },
   {
@@ -135,8 +212,15 @@
       "Wrangler session file watcher for auth",
       "Integrated in-app Wrangler login command"
     ],
+    "featuresZh": [
+      "新增用于认证的 Wrangler 登录态文件监听",
+      "集成应用内 Wrangler 登录命令"
+    ],
     "fixes": [
       "Resolve release mode PATH issues"
+    ],
+    "fixesZh": [
+      "解决发布模式下的 PATH 问题"
     ]
   },
   {
@@ -146,7 +230,12 @@
       "In-app setup wizard for dependencies",
       "Enhanced README with R2 Explorer details"
     ],
-    "fixes": []
+    "featuresZh": [
+      "新增应用内依赖安装向导",
+      "补充 README 中的 R2 Explorer 说明"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.0.5",
@@ -155,7 +244,12 @@
       "R2 integration stability improvements",
       "Added terminal installer screenshots"
     ],
-    "fixes": []
+    "featuresZh": [
+      "改进 R2 集成稳定性",
+      "新增终端安装器截图"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.0.4",
@@ -163,7 +257,11 @@
     "features": [
       "Build pipeline submodule refactor"
     ],
-    "fixes": []
+    "featuresZh": [
+      "重构构建流水线子模块"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.0.3",
@@ -172,7 +270,12 @@
       "Native Cloudflare REST API for R2 integration",
       "Streaming R2 uploads with progress tracking"
     ],
-    "fixes": []
+    "featuresZh": [
+      "使用原生 Cloudflare REST API 接入 R2",
+      "新增带进度跟踪的流式 R2 上传"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.0.2",
@@ -182,7 +285,13 @@
       "Windows platform build support",
       "Cloudflare-inspired branding and UI theme"
     ],
-    "fixes": []
+    "featuresZh": [
+      "完整支持 R2 存储桶和域名管理",
+      "支持 Windows 平台构建",
+      "新增 Cloudflare 风格的品牌和界面主题"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.0.1",
@@ -192,7 +301,13 @@
       "Soft deletion and undo for foreign keys",
       "Relocated SQL editor to modal dialog"
     ],
-    "fixes": []
+    "featuresZh": [
+      "支持 macOS 通用 DMG 构建产物",
+      "新增外键软删除和撤销",
+      "将 SQL 编辑器移动到模态对话框"
+    ],
+    "fixes": [],
+    "fixesZh": []
   },
   {
     "version": "1.0.0",
@@ -204,6 +319,14 @@
       "Radix UI & Tailwind CSS implementation",
       "Cloudflare account and profile management"
     ],
-    "fixes": []
+    "featuresZh": [
+      "初始稳定版本",
+      "交互式 ER 图结构可视化器",
+      "Cloudflare D1 数据库和 SQL 查询编辑器",
+      "基于 Radix UI 和 Tailwind CSS 的界面实现",
+      "Cloudflare 账号和个人资料管理"
+    ],
+    "fixes": [],
+    "fixesZh": []
   }
 ]
