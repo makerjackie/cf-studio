@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { readImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { readDir, readFile, stat } from "@tauri-apps/plugin-fs";
 import {
   Box,
   CalendarDays,
@@ -22,6 +24,7 @@ import {
   List,
   Loader2,
   Pencil,
+  Pin,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -36,6 +39,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -58,22 +62,25 @@ import {
   moveR2Object,
   uploadR2Object,
   uploadR2ObjectBytes,
+  uploadR2RemoteUrl,
   type BucketDomainsInfo,
   type FolderListing,
   type R2Bucket,
   type R2Object,
 } from "@/lib/r2";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, orderPinnedFirst } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import {
   buildPreviewCacheKey,
   buildPublicUrl,
   buildThumbnailCacheKey,
   buildUploadPrefix as makeUploadPrefix,
+  copyOutputLinesForKeys,
   CopyFormat,
   extensionForMime,
   fileNameFromKey,
   fileNameFromPath,
+  fileNameFromUrl,
   folderLabel,
   folderPrefixForKey,
   isImageObject,
@@ -94,11 +101,17 @@ import {
   type UploadSource,
 } from "@/lib/r2AssetUtils";
 import {
+  DEFAULT_R2_UPLOAD_SETTINGS,
   isCacheStale,
   r2BucketDomainCacheKey,
   R2_BUCKET_DOMAIN_CACHE_TTL_MS,
   r2ObjectListingCacheKey,
+  r2PinnedBucketKey,
+  r2UploadSettingsKey,
   useAppStore,
+  type R2ImageOutputFormat,
+  type R2UploadSettings,
+  type R2UploadSettingsPatch,
 } from "@/store/useAppStore";
 
 const R2_PREFIX_PREFETCH_LIMIT = 4;
@@ -121,33 +134,153 @@ interface ObjectActionState {
   object: R2Object;
 }
 
+type DataTransferItemWithEntry = DataTransferItem & {
+  webkitGetAsEntry?: () => FileSystemEntry | null;
+};
+
+function inferImageMime(name: string, contentType?: string) {
+  if (contentType?.startsWith("image/")) return contentType;
+  if (/\.jpe?g$/i.test(name)) return "image/jpeg";
+  if (/\.png$/i.test(name)) return "image/png";
+  if (/\.webp$/i.test(name)) return "image/webp";
+  return "";
+}
+
+function supportedRasterFormat(name: string, contentType?: string): "jpeg" | "png" | "webp" | null {
+  const mime = inferImageMime(name, contentType).toLowerCase();
+  if (mime.includes("jpeg") || /\.jpe?g$/i.test(name)) return "jpeg";
+  if (mime.includes("png") || /\.png$/i.test(name)) return "png";
+  if (mime.includes("webp") || /\.webp$/i.test(name)) return "webp";
+  return null;
+}
+
+function outputMimeForFormat(format: R2ImageOutputFormat, fallback: "jpeg" | "png" | "webp") {
+  const resolved = format === "original" ? fallback : format;
+  if (resolved === "jpeg") return "image/jpeg";
+  if (resolved === "png") return "image/png";
+  return "image/webp";
+}
+
+function extensionForImageFormat(format: R2ImageOutputFormat, fallback: "jpeg" | "png" | "webp") {
+  const resolved = format === "original" ? fallback : format;
+  return resolved === "jpeg" ? "jpg" : resolved;
+}
+
+function replaceImageExtension(name: string, extension: string) {
+  const safeExtension = extension.replace(/^\./, "");
+  if (/\.[^./\\]+$/.test(name)) return name.replace(/\.[^./\\]+$/, `.${safeExtension}`);
+  return `${name}.${safeExtension}`;
+}
+
+function joinLocalPath(parent: string, child: string) {
+  const separator = parent.includes("\\") && !parent.includes("/") ? "\\" : "/";
+  return `${parent.replace(/[\\/]+$/, "")}${separator}${child}`;
+}
+
+function scaledImageSize(width: number, height: number, maxWidth: number | null, maxHeight: number | null) {
+  const widthLimit = maxWidth && maxWidth > 0 ? maxWidth : width;
+  const heightLimit = maxHeight && maxHeight > 0 ? maxHeight : height;
+  const scale = Math.min(1, widthLimit / width, heightLimit / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+function blobToImage(blob: Blob) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Image could not be decoded."));
+    };
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, mimeType: string, quality: number) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          reject(new Error("Image could not be encoded."));
+        }
+      },
+      mimeType,
+      quality
+    );
+  });
+}
+
 function BucketRow({
   bucket,
   active,
+  pinned,
   onClick,
+  onTogglePin,
 }: {
   bucket: R2Bucket;
   active: boolean;
+  pinned: boolean;
   onClick: () => void;
+  onTogglePin: () => void;
 }) {
+  const { t } = useI18n();
+  const pinLabel = pinned ? t("common.unpinFromTop") : t("common.pinToTop");
+
   return (
-    <button
-      onClick={onClick}
+    <div
       className={cn(
-        "flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
+        "group flex w-full items-center rounded-md text-sm transition-colors",
         active ? "bg-primary/10 text-primary" : "hover:bg-muted"
       )}
     >
-      <span className="flex min-w-0 items-center gap-2">
-        <Box size={14} className="shrink-0" />
-        <span className="truncate font-medium">{bucket.name}</span>
-      </span>
-      {bucket.object_count != null && (
-        <Badge variant="secondary" className="shrink-0 text-[10px]">
-          {bucket.object_count}
-        </Badge>
-      )}
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center justify-between gap-3 px-3 py-2 text-left"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <Box size={14} className="shrink-0" />
+          <span className="truncate font-medium">{bucket.name}</span>
+        </span>
+        {bucket.object_count != null && (
+          <Badge variant="secondary" className="shrink-0 text-[10px]">
+            {bucket.object_count}
+          </Badge>
+        )}
+      </button>
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              aria-label={pinLabel}
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePin();
+              }}
+              className={cn(
+                "mr-1 grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-background/70 hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 group-hover:opacity-100",
+                pinned && "bg-primary/10 text-primary opacity-100 hover:bg-primary/15 hover:text-primary"
+              )}
+            >
+              <Pin size={13} strokeWidth={pinned ? 2.2 : 1.8} fill={pinned ? "currentColor" : "none"} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">
+            {pinLabel}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
   );
 }
 
@@ -195,6 +328,178 @@ async function clipboardImageToFile() {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) throw new Error("Could not encode clipboard image.");
   return new File([blob], `clipboard-${Date.now()}.png`, { type: "image/png" });
+}
+
+async function optimizeUploadSource(source: UploadSource, settings: R2UploadSettings): Promise<UploadSource> {
+  const imageSettings = settings.imageOptimization;
+  if (!imageSettings.enabled) {
+    return source;
+  }
+
+  const sourceName = source.name;
+  const sourceFormat = supportedRasterFormat(sourceName, source.contentType);
+  if (!sourceFormat) {
+    return source;
+  }
+
+  let blob: Blob;
+  if (source.file) {
+    blob = source.file;
+  } else if (source.localPath) {
+    const bytes = await readFile(source.localPath);
+    blob = new Blob([bytes], { type: inferImageMime(sourceName, source.contentType) || "application/octet-stream" });
+  } else {
+    return source;
+  }
+
+  const originalSize = blob.size;
+  const image = await blobToImage(blob);
+  const dimensions = scaledImageSize(
+    image.naturalWidth,
+    image.naturalHeight,
+    imageSettings.maxWidth,
+    imageSettings.maxHeight
+  );
+  const targetMime = outputMimeForFormat(imageSettings.outputFormat, sourceFormat);
+  const targetExtension = extensionForImageFormat(imageSettings.outputFormat, sourceFormat);
+  const targetName = replaceImageExtension(sourceName, targetExtension);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = dimensions.width;
+  canvas.height = dimensions.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is not available.");
+  context.drawImage(image, 0, 0, dimensions.width, dimensions.height);
+
+  const outputBlob = await canvasToBlob(
+    canvas,
+    targetMime,
+    Math.min(100, Math.max(1, imageSettings.quality)) / 100
+  );
+
+  if (imageSettings.skipIfOutputLarger && outputBlob.size >= originalSize) {
+    return {
+      ...source,
+      originalName: source.originalName || sourceName,
+      originalSize,
+      outputSize: originalSize,
+      processingNote: "kept-original",
+    };
+  }
+
+  const outputFile = new File([outputBlob], targetName, { type: targetMime });
+  return {
+    ...source,
+    name: targetName,
+    file: outputFile,
+    localPath: undefined,
+    contentType: targetMime,
+    originalName: source.originalName || sourceName,
+    originalSize,
+    outputSize: outputBlob.size,
+    processingNote: "optimized",
+  };
+}
+
+async function collectDirectoryUploadSources(rootPath: string) {
+  const rootName = fileNameFromPath(rootPath);
+  const sources: UploadSource[] = [];
+
+  async function visit(directoryPath: string, relativePrefix: string) {
+    const entries = await readDir(directoryPath);
+    for (const entry of entries) {
+      const entryPath = joinLocalPath(directoryPath, entry.name);
+      const relativeName = relativePrefix ? `${relativePrefix}/${entry.name}` : `${rootName}/${entry.name}`;
+      if (entry.isDirectory) {
+        await visit(entryPath, relativeName);
+      } else if (entry.isFile) {
+        sources.push({
+          name: relativeName,
+          localPath: entryPath,
+        });
+      }
+    }
+  }
+
+  await visit(rootPath, "");
+  return sources;
+}
+
+async function collectLocalPathUploadSources(paths: string[]) {
+  const sources: UploadSource[] = [];
+
+  for (const path of paths) {
+    const info = await stat(path);
+    if (info.isDirectory) {
+      sources.push(...await collectDirectoryUploadSources(path));
+    } else if (info.isFile) {
+      sources.push({
+        name: fileNameFromPath(path),
+        localPath: path,
+      });
+    }
+  }
+
+  return sources;
+}
+
+function fileFromDroppedEntry(entry: FileSystemFileEntry) {
+  return new Promise<File>((resolve, reject) => {
+    entry.file(resolve, reject);
+  });
+}
+
+async function readDroppedDirectoryEntries(entry: FileSystemDirectoryEntry) {
+  const reader = entry.createReader();
+  const entries: FileSystemEntry[] = [];
+
+  while (true) {
+    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+      reader.readEntries(resolve, reject);
+    });
+    if (batch.length === 0) break;
+    entries.push(...batch);
+  }
+
+  return entries;
+}
+
+async function collectDroppedEntryUploadSources(entry: FileSystemEntry, parentPath = ""): Promise<UploadSource[]> {
+  const relativeName = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+
+  if (entry.isFile) {
+    const file = await fileFromDroppedEntry(entry as FileSystemFileEntry);
+    return [{
+      name: relativeName,
+      file,
+      contentType: file.type || undefined,
+    }];
+  }
+
+  if (entry.isDirectory) {
+    const entries = await readDroppedDirectoryEntries(entry as FileSystemDirectoryEntry);
+    const batches = await Promise.all(entries.map((child) => collectDroppedEntryUploadSources(child, relativeName)));
+    return batches.flat();
+  }
+
+  return [];
+}
+
+async function collectDroppedUploadSources(dataTransfer: DataTransfer) {
+  const entries = Array.from(dataTransfer.items ?? [])
+    .map((item) => (item as DataTransferItemWithEntry).webkitGetAsEntry?.())
+    .filter((entry): entry is FileSystemEntry => Boolean(entry));
+
+  if (entries.length > 0) {
+    const batches = await Promise.all(entries.map((entry) => collectDroppedEntryUploadSources(entry)));
+    return batches.flat();
+  }
+
+  return Array.from(dataTransfer.files ?? []).map((file) => ({
+    name: file.webkitRelativePath || file.name,
+    file,
+    contentType: file.type || undefined,
+  }));
 }
 
 function R2Thumbnail({
@@ -318,6 +623,50 @@ function R2PreviewImage({
   );
 }
 
+function SettingLabel({
+  htmlFor,
+  label,
+  help,
+}: {
+  htmlFor?: string;
+  label: ReactNode;
+  help: string;
+}) {
+  return (
+    <details className="group space-y-1">
+      <summary className="flex w-fit cursor-help list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+        <Label htmlFor={htmlFor} className="text-xs font-medium text-muted-foreground">
+          {label}
+        </Label>
+        <span className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition-colors group-open:bg-muted group-open:text-foreground">
+          <Info size={11} aria-hidden="true" />
+        </span>
+      </summary>
+      <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">{help}</p>
+    </details>
+  );
+}
+
+function SettingSection({
+  icon,
+  title,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="space-y-3 rounded-md border border-border bg-background p-3">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <span className="grid h-6 w-6 place-items-center rounded-md bg-muted text-muted-foreground">{icon}</span>
+        {title}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export function R2BucketsView() {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -325,8 +674,10 @@ export function R2BucketsView() {
   const objectRequestIdRef = useRef(0);
   const domainRequestIdRef = useRef(0);
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
+  const lastNativeDropAtRef = useRef(0);
   const setR2ObjectListing = useAppStore((s) => s.setR2ObjectListing);
   const setR2BucketDomain = useAppStore((s) => s.setR2BucketDomain);
+  const setR2UploadSettings = useAppStore((s) => s.setR2UploadSettings);
   const activeAccount = useAppStore((s) => s.activeAccount);
   const cloudflareAccountId = useAppStore((s) => s.cloudflareAccountId);
   const r2ViewMode = useAppStore((s) => s.r2ViewMode);
@@ -334,6 +685,8 @@ export function R2BucketsView() {
   const r2SortDirection = useAppStore((s) => s.r2SortDirection);
   const setR2ViewMode = useAppStore((s) => s.setR2ViewMode);
   const setR2Sort = useAppStore((s) => s.setR2Sort);
+  const pinnedR2BucketKeys = useAppStore((s) => s.pinnedR2BucketKeys);
+  const togglePinnedR2Bucket = useAppStore((s) => s.togglePinnedR2Bucket);
   const [selectedBucket, setSelectedBucket] = useState<R2Bucket | null>(null);
   const [prefix, setPrefix] = useState("");
   const [listing, setListing] = useState<FolderListing | null>(null);
@@ -354,6 +707,8 @@ export function R2BucketsView() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [urlUploadOpen, setUrlUploadOpen] = useState(false);
+  const [urlUploadText, setUrlUploadText] = useState("");
   const [objectAction, setObjectAction] = useState<ObjectActionState | null>(null);
   const [objectActionKey, setObjectActionKey] = useState("");
   const [objectActionRunning, setObjectActionRunning] = useState(false);
@@ -363,10 +718,25 @@ export function R2BucketsView() {
   const [copyFormat, setCopyFormat] = useState<CopyFormat>("url");
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>("rename");
   const [cacheControl, setCacheControl] = useState("");
+  const [imageOptimizationEnabled, setImageOptimizationEnabled] = useState(false);
+  const [imageOutputFormat, setImageOutputFormat] = useState<R2ImageOutputFormat>("webp");
+  const [imageQuality, setImageQuality] = useState(82);
+  const [imageMaxWidth, setImageMaxWidth] = useState<number | null>(2400);
+  const [imageMaxHeight, setImageMaxHeight] = useState<number | null>(null);
+  const [imageSkipIfLarger, setImageSkipIfLarger] = useState(true);
+  const [preflightUploads, setPreflightUploads] = useState<PreparedUpload[] | null>(null);
+  const preflightResolveRef = useRef<((confirmed: boolean) => void) | null>(null);
 
   const buckets = state.status === "success" ? state.data : [];
   const currentDomainLabel = domainLabel(domainsInfo, publicDomain);
   const accountScope = activeAccount?.id || cloudflareAccountId || "default";
+  const sortedBuckets = useMemo(
+    () => orderPinnedFirst(buckets, pinnedR2BucketKeys, (bucket) => r2PinnedBucketKey(accountScope, bucket.name)),
+    [accountScope, buckets, pinnedR2BucketKeys]
+  );
+  const uploadSettingsCacheKey = selectedBucket
+    ? r2UploadSettingsKey(accountScope, selectedBucket.name)
+    : null;
   const filterText = objectFilter.trim().toLowerCase();
   const filteredFolders = (listing?.folders ?? []).filter((folder) =>
     filterText ? folder.toLowerCase().includes(filterText) : true
@@ -383,6 +753,80 @@ export function R2BucketsView() {
   const previewIndex = previewObject
     ? previewableFiles.findIndex((object) => object.key === previewObject.key)
     : -1;
+  const currentUploadSettings: R2UploadSettings = useMemo(
+    () => ({
+      ...DEFAULT_R2_UPLOAD_SETTINGS,
+      uploadPrefixInput,
+      useDatePrefix,
+      copyFormat,
+      conflictPolicy,
+      cacheControl,
+      imageOptimization: {
+        enabled: imageOptimizationEnabled,
+        outputFormat: imageOutputFormat,
+        quality: imageQuality,
+        maxWidth: imageMaxWidth,
+        maxHeight: imageMaxHeight,
+        skipIfOutputLarger: imageSkipIfLarger,
+      },
+    }),
+    [
+      cacheControl,
+      conflictPolicy,
+      copyFormat,
+      imageMaxHeight,
+      imageMaxWidth,
+      imageOptimizationEnabled,
+      imageOutputFormat,
+      imageQuality,
+      imageSkipIfLarger,
+      uploadPrefixInput,
+      useDatePrefix,
+    ]
+  );
+  const uploadExampleKey = `${makeUploadPrefix(prefix, uploadPrefixInput, useDatePrefix)}example.png`;
+
+  const persistUploadSettings = useCallback(
+    (settings: R2UploadSettingsPatch) => {
+      if (!uploadSettingsCacheKey) return;
+      setR2UploadSettings(uploadSettingsCacheKey, settings);
+    },
+    [setR2UploadSettings, uploadSettingsCacheKey]
+  );
+
+  useEffect(() => {
+    if (!uploadSettingsCacheKey) {
+      setUploadPrefixInput(DEFAULT_R2_UPLOAD_SETTINGS.uploadPrefixInput);
+      setUseDatePrefix(DEFAULT_R2_UPLOAD_SETTINGS.useDatePrefix);
+      setCopyFormat(DEFAULT_R2_UPLOAD_SETTINGS.copyFormat);
+      setConflictPolicy(DEFAULT_R2_UPLOAD_SETTINGS.conflictPolicy);
+      setCacheControl(DEFAULT_R2_UPLOAD_SETTINGS.cacheControl);
+      setImageOptimizationEnabled(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.enabled);
+      setImageOutputFormat(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.outputFormat);
+      setImageQuality(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.quality);
+      setImageMaxWidth(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.maxWidth);
+      setImageMaxHeight(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.maxHeight);
+      setImageSkipIfLarger(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.skipIfOutputLarger);
+      return;
+    }
+
+    const stored = useAppStore.getState().r2UploadSettings[uploadSettingsCacheKey];
+    const settings = {
+      ...DEFAULT_R2_UPLOAD_SETTINGS,
+      ...stored,
+    };
+    setUploadPrefixInput(settings.uploadPrefixInput);
+    setUseDatePrefix(settings.useDatePrefix);
+    setCopyFormat(settings.copyFormat);
+    setConflictPolicy(settings.conflictPolicy);
+    setCacheControl(settings.cacheControl);
+    setImageOptimizationEnabled(settings.imageOptimization.enabled);
+    setImageOutputFormat(settings.imageOptimization.outputFormat);
+    setImageQuality(settings.imageOptimization.quality);
+    setImageMaxWidth(settings.imageOptimization.maxWidth);
+    setImageMaxHeight(settings.imageOptimization.maxHeight);
+    setImageSkipIfLarger(settings.imageOptimization.skipIfOutputLarger);
+  }, [uploadSettingsCacheKey]);
 
   const loadObjects = useCallback(
     async (force = false) => {
@@ -457,10 +901,10 @@ export function R2BucketsView() {
   }, [loadObjects]);
 
   useEffect(() => {
-    if (!selectedBucket && buckets.length > 0) {
-      setSelectedBucket(buckets[0]);
+    if (!selectedBucket && sortedBuckets.length > 0) {
+      setSelectedBucket(sortedBuckets[0]);
     }
-  }, [buckets, selectedBucket]);
+  }, [selectedBucket, sortedBuckets]);
 
   useEffect(() => {
     if (!selectedBucket) return;
@@ -671,21 +1115,62 @@ export function R2BucketsView() {
     [accountScope, selectedBucket?.name, setR2ObjectListing]
   );
 
+  const requestUploadPreflight = useCallback((items: PreparedUpload[]) => {
+    return new Promise<boolean>((resolve) => {
+      preflightResolveRef.current = resolve;
+      setPreflightUploads(items);
+    });
+  }, []);
+
+  const closeUploadPreflight = useCallback((confirmed: boolean) => {
+    preflightResolveRef.current?.(confirmed);
+    preflightResolveRef.current = null;
+    setPreflightUploads(null);
+  }, []);
+
   const uploadSources = useCallback(
     async (sources: UploadSource[]) => {
       if (!selectedBucket || sources.length === 0) return;
       setUploading(true);
 
       try {
-        const plan = planUploads(sources);
+        const uploadSources = await Promise.all(
+          sources.map(async (source) => {
+            try {
+              return await optimizeUploadSource(source, currentUploadSettings);
+            } catch (err) {
+              console.warn("[CF Studio] Image optimization failed:", err);
+              return {
+                ...source,
+                processingNote: "optimize-failed",
+              };
+            }
+          })
+        );
+        const plan = planUploads(uploadSources);
         const preparedUploads = await prepareUploads(selectedBucket.name, plan);
         if (preparedUploads.length === 0) {
           toast({ title: t("r2.uploadSkipped"), description: t("r2.uploadSkippedDesc") });
           return;
         }
 
-        let copiedUrl: string | null = null;
-        let copiedText: string | null = null;
+        const shouldConfirmPreflight = preparedUploads.length > 1 || preparedUploads.some((item) =>
+          item.originalKey !== item.key ||
+          Boolean(item.source.processingNote) ||
+          item.source.originalSize != null ||
+          item.source.outputSize != null
+        );
+        if (shouldConfirmPreflight) {
+          const confirmed = await requestUploadPreflight(preparedUploads);
+          if (!confirmed) {
+            toast({ title: t("r2.uploadCancelled") });
+            return;
+          }
+        }
+
+        const successfulKeys: string[] = [];
+        let failedCount = 0;
+        let firstUploadError: string | null = null;
 
         for (const item of preparedUploads) {
           const transferId = addTransfer({
@@ -703,20 +1188,24 @@ export function R2BucketsView() {
               const bytes = Array.from(new Uint8Array(buffer));
               updateTransfer(transferId, { progress: 45 });
               await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType, cacheControl.trim() || undefined);
+            } else if (item.source.remoteUrl) {
+              updateTransfer(transferId, { progress: 45 });
+              await uploadR2RemoteUrl(selectedBucket.name, item.key, item.source.remoteUrl, cacheControl.trim() || undefined);
             } else {
               updateTransfer(transferId, { status: "failed", error: "Missing upload source." });
               continue;
             }
             updateTransfer(transferId, { status: "done", progress: 100 });
+            successfulKeys.push(item.key);
           } catch (err) {
             updateTransfer(transferId, { status: "failed", progress: 100, error: String(err) });
-            throw err;
+            failedCount += 1;
+            firstUploadError = firstUploadError || String(err);
           }
+        }
 
-          copiedUrl = buildPublicUrl(publicDomain, item.key);
-          copiedText = copiedUrl && copyFormat === "markdown"
-            ? markdownImage(copiedUrl, item.key)
-            : copiedUrl;
+        if (successfulKeys.length === 0 && firstUploadError) {
+          throw new Error(firstUploadError);
         }
 
         await reloadObjects();
@@ -727,12 +1216,23 @@ export function R2BucketsView() {
           }
         });
 
+        const copiedText = copyOutputLinesForKeys(successfulKeys, publicDomain, copyFormat);
+
         if (copiedText) {
           const copied = await tryCopyText(copiedText);
           toast({
-            title: copied ? t("r2.uploadCopied") : t("r2.uploadedCopyFailed"),
+            title: copied
+              ? failedCount > 0
+                ? t("r2.uploadPartialCopied", { success: successfulKeys.length, failed: failedCount })
+                : t("r2.uploadCopied")
+              : t("r2.uploadedCopyFailed"),
             description: copied ? copiedText : t("r2.copyFailedDesc"),
             variant: copied ? "default" : "destructive",
+          });
+        } else if (failedCount > 0) {
+          toast({
+            title: t("r2.uploadPartial", { success: successfulKeys.length, failed: failedCount }),
+            description: t("r2.noPublicDomainCopy"),
           });
         } else {
           toast({ title: t("r2.uploaded"), description: t("r2.noPublicDomainCopy") });
@@ -747,11 +1247,13 @@ export function R2BucketsView() {
       conflictPolicy,
       copyFormat,
       cacheControl,
+      currentUploadSettings,
       planUploads,
       prefetchR2Prefix,
       prefix,
       prepareUploads,
       publicDomain,
+      requestUploadPreflight,
       reloadObjects,
       selectedBucket,
       t,
@@ -777,15 +1279,39 @@ export function R2BucketsView() {
 
   const uploadLocalPaths = useCallback(
     async (paths: string[]) => {
-      await uploadSources(
-        paths.map((path) => ({
-          name: fileNameFromPath(path),
-          localPath: path,
-        }))
-      );
+      try {
+        const sources = await collectLocalPathUploadSources(paths);
+        if (sources.length === 0) {
+          toast({ title: t("r2.folderUploadEmpty") });
+          return;
+        }
+        await uploadSources(sources);
+      } catch (err) {
+        toast({ title: t("r2.localUploadReadFailed"), description: String(err), variant: "destructive" });
+      }
     },
-    [uploadSources]
+    [t, toast, uploadSources]
   );
+
+  const submitUrlUpload = useCallback(async () => {
+    const sources = urlUploadText
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .map((remoteUrl) => ({
+        name: fileNameFromUrl(remoteUrl),
+        remoteUrl,
+      }));
+
+    if (sources.length === 0) {
+      toast({ title: t("r2.urlUploadEmpty"), variant: "destructive" });
+      return;
+    }
+
+    setUrlUploadOpen(false);
+    setUrlUploadText("");
+    await uploadSources(sources);
+  }, [t, toast, uploadSources, urlUploadText]);
 
   const openUploadDialog = useCallback(async () => {
     const selected = await open({
@@ -802,11 +1328,10 @@ export function R2BucketsView() {
     try {
       const file = await clipboardImageToFile();
       await uploadFiles([file]);
-    } catch (err) {
-      console.warn("[CF Studio] Clipboard image read failed:", err);
-      await openUploadDialog();
+    } catch {
+      return;
     }
-  }, [openUploadDialog, uploadFiles]);
+  }, [uploadFiles]);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -824,6 +1349,55 @@ export function R2BucketsView() {
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, [selectedBucket, uploadFiles, uploading]);
+
+  useEffect(() => {
+    if (!selectedBucket) {
+      setDragActive(false);
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (uploading) return;
+
+        const payload = event.payload;
+        if (payload.type === "enter" || payload.type === "over") {
+          setDragActive(true);
+          return;
+        }
+
+        if (payload.type === "leave") {
+          setDragActive(false);
+          return;
+        }
+
+        if (payload.type === "drop") {
+          setDragActive(false);
+          if (payload.paths.length > 0) {
+            lastNativeDropAtRef.current = Date.now();
+            void uploadLocalPaths(payload.paths);
+          }
+        }
+      })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+        } else {
+          unlisten = cleanup;
+        }
+      })
+      .catch((err) => {
+        console.warn("[CF Studio] Native file drop listener failed:", err);
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [selectedBucket, uploadLocalPaths, uploading]);
 
   useEffect(() => {
     if (!selectedBucket || !listing || listing.folders.length === 0) return;
@@ -1015,13 +1589,25 @@ export function R2BucketsView() {
   const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragActive(false);
-    const files = Array.from(event.dataTransfer.files ?? []);
-    await uploadFiles(files);
+    if (Date.now() - lastNativeDropAtRef.current < 600) return;
+
+    try {
+      const sources = await collectDroppedUploadSources(event.dataTransfer);
+      if (sources.length === 0) {
+        toast({ title: t("r2.uploadSkipped"), description: t("r2.dropNoFiles") });
+        return;
+      }
+      await uploadSources(sources);
+    } catch (err) {
+      toast({ title: t("r2.localUploadReadFailed"), description: String(err), variant: "destructive" });
+    }
   };
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    setDragActive(true);
+    if (selectedBucket && !uploading) {
+      setDragActive(true);
+    }
   };
 
   const handleDragLeave = (event: DragEvent<HTMLDivElement>) => {
@@ -1031,7 +1617,19 @@ export function R2BucketsView() {
   };
 
   return (
-    <div className="flex h-full flex-col gap-5">
+    <div className="relative flex h-full flex-col gap-5">
+      {dragActive && selectedBucket && (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-lg bg-background/70 p-6 backdrop-blur-sm">
+          <div className="flex min-w-72 flex-col items-center rounded-lg border border-dashed border-primary bg-background px-6 py-5 text-center shadow-lg">
+            <Upload size={24} className="mb-3 text-primary" />
+            <p className="text-sm font-semibold text-foreground">{t("r2.dropToUpload")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {t("r2.dropToUploadDesc", { bucket: selectedBucket.name })}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">{t("r2.title")}</h1>
@@ -1049,7 +1647,11 @@ export function R2BucketsView() {
           </Button>
           <Button variant="outline" size="sm" onClick={uploadClipboardImage} disabled={!selectedBucket || uploading}>
             <Clipboard size={14} className="mr-2" />
-            {t("r2.pasteOrUpload")}
+            {t("r2.pasteImage")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setUrlUploadOpen(true)} disabled={!selectedBucket || uploading}>
+            <Globe2 size={14} className="mr-2" />
+            {t("r2.uploadUrls")}
           </Button>
           <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} disabled={!selectedBucket} title={t("r2.uploadSettings")}>
             <SlidersHorizontal size={14} />
@@ -1071,17 +1673,22 @@ export function R2BucketsView() {
             <p className="p-3 text-sm text-muted-foreground">{t("r2.noBuckets")}</p>
           )}
           <div className="space-y-1">
-            {buckets.map((bucket) => (
-              <BucketRow
-                key={bucket.name}
-                bucket={bucket}
-                active={selectedBucket?.name === bucket.name}
-                onClick={() => {
-                  setSelectedBucket(bucket);
-                  setPrefix("");
-                }}
-              />
-            ))}
+            {sortedBuckets.map((bucket) => {
+              const pinKey = r2PinnedBucketKey(accountScope, bucket.name);
+              return (
+                <BucketRow
+                  key={bucket.name}
+                  bucket={bucket}
+                  active={selectedBucket?.name === bucket.name}
+                  pinned={pinnedR2BucketKeys.includes(pinKey)}
+                  onTogglePin={() => togglePinnedR2Bucket(pinKey)}
+                  onClick={() => {
+                    setSelectedBucket(bucket);
+                    setPrefix("");
+                  }}
+                />
+              );
+            })}
           </div>
         </aside>
 
@@ -1091,12 +1698,6 @@ export function R2BucketsView() {
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          {dragActive && (
-            <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center rounded-lg border border-dashed border-primary bg-background/80 text-sm font-medium text-primary">
-              {t("r2.dropToUpload")}
-            </div>
-          )}
-
           <div className="sticky top-0 z-10 border-b border-border bg-background/95">
             <div className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="min-w-0">
@@ -1574,84 +2175,353 @@ export function R2BucketsView() {
       )}
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="!flex max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b border-border px-6 py-4 pr-12">
             <DialogTitle>{t("r2.uploadSettings")}</DialogTitle>
             <DialogDescription>{t("r2.uploadSettingsDesc")}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="min-w-0 space-y-1.5">
-              <Label htmlFor="r2-upload-prefix" className="text-xs text-muted-foreground">
-                {t("r2.uploadPrefix")}
-              </Label>
-              <Input
-                id="r2-upload-prefix"
-                value={uploadPrefixInput}
-                onChange={(event) => setUploadPrefixInput(event.target.value)}
-                placeholder={prefix || t("r2.uploadPrefixPlaceholder")}
-                className="h-9"
-              />
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+            <div className="space-y-4">
+              <SettingSection icon={<Folder size={14} />} title={t("r2.uploadDestinationSection")}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-1.5">
+                    <SettingLabel
+                      htmlFor="r2-upload-prefix"
+                      label={t("r2.uploadPrefix")}
+                      help={t("r2.uploadPrefixHelp")}
+                    />
+                    <Input
+                      id="r2-upload-prefix"
+                      value={uploadPrefixInput}
+                      onChange={(event) => {
+                        setUploadPrefixInput(event.target.value);
+                        persistUploadSettings({ uploadPrefixInput: event.target.value });
+                      }}
+                      placeholder={prefix || t("r2.uploadPrefixPlaceholder")}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="flex items-start gap-2 rounded-md bg-muted/35 p-3">
+                    <Checkbox
+                      id="r2-date-prefix"
+                      checked={useDatePrefix}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked === true;
+                        setUseDatePrefix(enabled);
+                        persistUploadSettings({ useDatePrefix: enabled });
+                      }}
+                    />
+                    <SettingLabel
+                      htmlFor="r2-date-prefix"
+                      label={
+                        <span className="flex items-center gap-1.5">
+                          <CalendarDays size={13} />
+                          {t("r2.datePrefix")}
+                        </span>
+                      }
+                      help={t("r2.datePrefixHelp")}
+                    />
+                  </div>
+                </div>
+                <div className="rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground">{t("r2.uploadPathPreview")}</span>
+                  <span className="ml-2 break-all font-mono">/{uploadExampleKey}</span>
+                </div>
+              </SettingSection>
+
+              <SettingSection icon={<Pencil size={14} />} title={t("r2.namingSection")}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-1.5">
+                    <SettingLabel
+                      htmlFor="r2-upload-name"
+                      label={t("r2.uploadName")}
+                      help={t("r2.uploadNameHelp")}
+                    />
+                    <Input
+                      id="r2-upload-name"
+                      value={uploadNameOverride}
+                      onChange={(event) => setUploadNameOverride(event.target.value)}
+                      placeholder={t("r2.uploadNamePlaceholder")}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <SettingLabel label={t("r2.conflictPolicy")} help={t("r2.conflictPolicyHelp")} />
+                    <Select
+                      value={conflictPolicy}
+                      onValueChange={(value) => {
+                        const next = value as ConflictPolicy;
+                        setConflictPolicy(next);
+                        persistUploadSettings({ conflictPolicy: next });
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="rename">{t("r2.conflictRename")}</SelectItem>
+                        <SelectItem value="skip">{t("r2.conflictSkip")}</SelectItem>
+                        <SelectItem value="overwrite">{t("r2.conflictOverwrite")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </SettingSection>
+
+              <SettingSection icon={<Copy size={14} />} title={t("r2.copySection")}>
+                <div className="space-y-1.5">
+                  <SettingLabel label={t("r2.copyFormat")} help={t("r2.copyFormatHelp")} />
+                  <Select
+                    value={copyFormat}
+                    onValueChange={(value) => {
+                      const next = value as CopyFormat;
+                      setCopyFormat(next);
+                      persistUploadSettings({ copyFormat: next });
+                    }}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="url">{t("r2.copyUrlFormat")}</SelectItem>
+                      <SelectItem value="markdown">{t("r2.copyMarkdownFormat")}</SelectItem>
+                      <SelectItem value="html">{t("r2.copyHtmlFormat")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </SettingSection>
+
+              <SettingSection icon={<ImageIcon size={14} />} title={t("r2.imageSection")}>
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <SettingLabel
+                        htmlFor="r2-image-optimization"
+                        label={t("r2.imageOptimization")}
+                        help={t("r2.imageOptimizationHelp")}
+                      />
+                    </div>
+                    <Checkbox
+                      id="r2-image-optimization"
+                      checked={imageOptimizationEnabled}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked === true;
+                        setImageOptimizationEnabled(enabled);
+                        persistUploadSettings({ imageOptimization: { enabled } });
+                      }}
+                    />
+                  </div>
+                  {imageOptimizationEnabled && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <SettingLabel label={t("r2.imageOutputFormat")} help={t("r2.imageOutputFormatHelp")} />
+                        <Select
+                          value={imageOutputFormat}
+                          onValueChange={(value) => {
+                            const next = value as R2ImageOutputFormat;
+                            setImageOutputFormat(next);
+                            persistUploadSettings({ imageOptimization: { outputFormat: next } });
+                          }}
+                        >
+                          <SelectTrigger className="h-9">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="original">{t("r2.imageFormatOriginal")}</SelectItem>
+                            <SelectItem value="webp">WebP</SelectItem>
+                            <SelectItem value="jpeg">JPEG</SelectItem>
+                            <SelectItem value="png">PNG</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <SettingLabel
+                          htmlFor="r2-image-quality"
+                          label={t("r2.imageQuality")}
+                          help={t("r2.imageQualityHelp")}
+                        />
+                        <Input
+                          id="r2-image-quality"
+                          type="number"
+                          min={1}
+                          max={100}
+                          value={imageQuality}
+                          onChange={(event) => {
+                            const next = Math.min(100, Math.max(1, Number(event.target.value) || DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.quality));
+                            setImageQuality(next);
+                            persistUploadSettings({ imageOptimization: { quality: next } });
+                          }}
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <SettingLabel
+                          htmlFor="r2-image-max-width"
+                          label={t("r2.imageMaxWidth")}
+                          help={t("r2.imageMaxWidthHelp")}
+                        />
+                        <Input
+                          id="r2-image-max-width"
+                          type="number"
+                          min={1}
+                          value={imageMaxWidth ?? ""}
+                          onChange={(event) => {
+                            const next = event.target.value ? Math.max(1, Number(event.target.value)) : null;
+                            setImageMaxWidth(next);
+                            persistUploadSettings({ imageOptimization: { maxWidth: next } });
+                          }}
+                          placeholder="2400"
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <SettingLabel
+                          htmlFor="r2-image-max-height"
+                          label={t("r2.imageMaxHeight")}
+                          help={t("r2.imageMaxHeightHelp")}
+                        />
+                        <Input
+                          id="r2-image-max-height"
+                          type="number"
+                          min={1}
+                          value={imageMaxHeight ?? ""}
+                          onChange={(event) => {
+                            const next = event.target.value ? Math.max(1, Number(event.target.value)) : null;
+                            setImageMaxHeight(next);
+                            persistUploadSettings({ imageOptimization: { maxHeight: next } });
+                          }}
+                          placeholder={t("common.notAvailable")}
+                          className="h-9"
+                        />
+                      </div>
+                      <div className="flex items-start gap-2 rounded-md bg-muted/35 p-3 sm:col-span-2">
+                        <Checkbox
+                          id="r2-image-skip-larger"
+                          checked={imageSkipIfLarger}
+                          onCheckedChange={(checked) => {
+                            const enabled = checked === true;
+                            setImageSkipIfLarger(enabled);
+                            persistUploadSettings({ imageOptimization: { skipIfOutputLarger: enabled } });
+                          }}
+                        />
+                        <div className="space-y-1">
+                          <SettingLabel
+                            htmlFor="r2-image-skip-larger"
+                            label={t("r2.imageSkipIfLarger")}
+                            help={t("r2.imageSkipIfLargerHelp")}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </SettingSection>
+
+              <SettingSection icon={<Info size={14} />} title={t("r2.cacheSection")}>
+                <div className="space-y-1.5">
+                  <SettingLabel
+                    htmlFor="r2-cache-control"
+                    label={t("r2.cacheControl")}
+                    help={t("r2.cacheControlHelp")}
+                  />
+                  <Input
+                    id="r2-cache-control"
+                    value={cacheControl}
+                    onChange={(event) => {
+                      setCacheControl(event.target.value);
+                      persistUploadSettings({ cacheControl: event.target.value });
+                    }}
+                    placeholder="public, max-age=31536000, immutable"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              </SettingSection>
             </div>
-            <div className="min-w-0 space-y-1.5">
-              <Label htmlFor="r2-upload-name" className="text-xs text-muted-foreground">
-                {t("r2.uploadName")}
-              </Label>
-              <Input
-                id="r2-upload-name"
-                value={uploadNameOverride}
-                onChange={(event) => setUploadNameOverride(event.target.value)}
-                placeholder={t("r2.uploadNamePlaceholder")}
-                className="h-9"
-              />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={urlUploadOpen} onOpenChange={setUrlUploadOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{t("r2.urlUploadTitle")}</DialogTitle>
+            <DialogDescription>{t("r2.urlUploadDesc")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Textarea
+              value={urlUploadText}
+              onChange={(event) => setUrlUploadText(event.target.value)}
+              placeholder={"https://example.com/image-a.png\nhttps://example.com/file.zip"}
+              className="min-h-40 font-mono text-xs"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setUrlUploadOpen(false)} disabled={uploading}>
+                {t("common.cancel")}
+              </Button>
+              <Button onClick={submitUrlUpload} disabled={uploading}>
+                {t("r2.addUrlsToUpload")}
+              </Button>
             </div>
-            <div className="flex items-end gap-2 pb-2">
-              <Checkbox
-                id="r2-date-prefix"
-                checked={useDatePrefix}
-                onCheckedChange={(checked) => setUseDatePrefix(checked === true)}
-              />
-              <Label htmlFor="r2-date-prefix" className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <CalendarDays size={13} />
-                {t("r2.datePrefix")}
-              </Label>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!preflightUploads} onOpenChange={(open) => !open && closeUploadPreflight(false)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>{t("r2.preflightTitle")}</DialogTitle>
+            <DialogDescription>{t("r2.preflightDesc")}</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[52vh] overflow-auto rounded-md border border-border">
+            <div className="grid grid-cols-[1.3fr_1.7fr_0.9fr_0.9fr] gap-3 border-b border-border bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+              <span>{t("r2.preflightSource")}</span>
+              <span>{t("r2.preflightKey")}</span>
+              <span>{t("r2.preflightSize")}</span>
+              <span>{t("r2.preflightStatus")}</span>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">{t("r2.conflictPolicy")}</Label>
-              <Select value={conflictPolicy} onValueChange={(value) => setConflictPolicy(value as ConflictPolicy)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="rename">{t("r2.conflictRename")}</SelectItem>
-                  <SelectItem value="skip">{t("r2.conflictSkip")}</SelectItem>
-                  <SelectItem value="overwrite">{t("r2.conflictOverwrite")}</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="divide-y divide-border">
+              {(preflightUploads ?? []).map((item) => {
+                const originalSize = item.source.originalSize;
+                const outputSize = item.source.outputSize;
+                const optimized = originalSize != null && outputSize != null && outputSize < originalSize;
+                const keptOriginal = item.source.processingNote === "kept-original";
+                const optimizeFailed = item.source.processingNote === "optimize-failed";
+                const renamed = item.originalKey !== item.key;
+
+                return (
+                  <div key={`${item.originalKey}:${item.key}`} className="grid grid-cols-[1.3fr_1.7fr_0.9fr_0.9fr] gap-3 px-3 py-2 text-xs">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{item.source.originalName || item.source.name}</p>
+                      {item.source.originalName && item.source.originalName !== item.source.name && (
+                        <p className="truncate text-muted-foreground">{item.source.name}</p>
+                      )}
+                    </div>
+                    <p className="break-all font-mono text-[11px]">{item.key}</p>
+                    <div className="space-y-0.5 text-muted-foreground">
+                      {originalSize != null && <p>{formatBytes(originalSize)}</p>}
+                      {outputSize != null && outputSize !== originalSize && <p>{formatBytes(outputSize)}</p>}
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {optimized && <Badge variant="secondary" className="text-[10px]">{t("r2.preflightOptimized")}</Badge>}
+                      {keptOriginal && <Badge variant="outline" className="text-[10px]">{t("r2.preflightKeptOriginal")}</Badge>}
+                      {optimizeFailed && <Badge variant="destructive" className="text-[10px]">{t("r2.preflightOptimizeFailed")}</Badge>}
+                      {renamed && <Badge variant="secondary" className="text-[10px]">{t("r2.preflightRenamed")}</Badge>}
+                      {!optimized && !keptOriginal && !optimizeFailed && !renamed && (
+                        <span className="text-muted-foreground">{t("r2.preflightReady")}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-xs text-muted-foreground">{t("r2.copyFormat")}</Label>
-              <Select value={copyFormat} onValueChange={(value) => setCopyFormat(value as CopyFormat)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="url">{t("r2.copyUrlFormat")}</SelectItem>
-                  <SelectItem value="markdown">{t("r2.copyMarkdownFormat")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="r2-cache-control" className="text-xs text-muted-foreground">
-                {t("r2.cacheControl")}
-              </Label>
-              <Input
-                id="r2-cache-control"
-                value={cacheControl}
-                onChange={(event) => setCacheControl(event.target.value)}
-                placeholder="public, max-age=31536000, immutable"
-                className="h-9 font-mono text-xs"
-              />
-            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => closeUploadPreflight(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={() => closeUploadPreflight(true)}>
+              {t("r2.startUpload")}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

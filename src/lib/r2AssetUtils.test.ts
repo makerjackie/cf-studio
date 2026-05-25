@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildPublicUrl,
   buildUploadPrefix,
+  copyOutputLinesForKeys,
   datePrefix,
   fileNameFromKey,
   fileNameFromPath,
+  fileNameFromUrl,
+  formatCopyOutput,
   markdownImageLines,
   normalizePrefix,
   planUploadSources,
@@ -31,6 +34,31 @@ describe("r2AssetUtils", () => {
     expect(publicUrlLines(objects.slice(0, 2), "https://assets.example.com")).toContain("assets/b.png");
   });
 
+  it("formats upload copy output as URL, Markdown, or HTML", () => {
+    const url = "https://assets.example.com/blog/hello world.png";
+    expect(formatCopyOutput(url, "blog/hello world.png", "url")).toBe(url);
+    expect(formatCopyOutput(url, "blog/hello world.png", "markdown")).toBe(
+      "![hello world.png](https://assets.example.com/blog/hello world.png)"
+    );
+    expect(formatCopyOutput(url, "blog/hello world.png", "html")).toBe(
+      '<img src="https://assets.example.com/blog/hello world.png" alt="hello world.png" />'
+    );
+    expect(formatCopyOutput("https://assets.example.com/readme.txt", "readme.txt", "markdown")).toBe(
+      "[readme.txt](https://assets.example.com/readme.txt)"
+    );
+  });
+
+  it("builds one copied upload output per successful key", () => {
+    expect(copyOutputLinesForKeys(
+      ["assets/a.jpg", "assets/b.png"],
+      "https://assets.example.com",
+      "markdown"
+    )).toBe(
+      "![a.jpg](https://assets.example.com/assets/a.jpg)\n![b.png](https://assets.example.com/assets/b.png)"
+    );
+    expect(copyOutputLinesForKeys(["assets/a.jpg"], null, "url")).toBe("");
+  });
+
   it("normalizes prefixes and date prefixes", () => {
     expect(normalizePrefix("/blog")).toBe("blog/");
     expect(normalizePrefix("")).toBe("");
@@ -44,6 +72,8 @@ describe("r2AssetUtils", () => {
     expect(fileNameFromKey("a/b/c.png")).toBe("c.png");
     expect(fileNameFromPath("/Users/demo/c.png")).toBe("c.png");
     expect(fileNameFromPath("C:\\demo\\c.png")).toBe("c.png");
+    expect(fileNameFromUrl("https://example.com/assets/hello%20world.png?x=1")).toBe("hello world.png");
+    expect(fileNameFromUrl("not a url")).toBe("remote-file");
   });
 
   it("plans uploads and resolves conflicts", () => {

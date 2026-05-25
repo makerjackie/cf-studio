@@ -3,14 +3,19 @@ import type { R2Object } from "@/lib/r2";
 export type R2ViewMode = "list" | "grid";
 export type R2SortField = "name" | "size" | "updated" | "type";
 export type R2SortDirection = "asc" | "desc";
-export type CopyFormat = "url" | "markdown";
+export type CopyFormat = "url" | "markdown" | "html";
 export type ConflictPolicy = "overwrite" | "rename" | "skip";
 
 export interface UploadSource {
   name: string;
   file?: File;
   localPath?: string;
+  remoteUrl?: string;
   contentType?: string;
+  originalName?: string;
+  originalSize?: number;
+  outputSize?: number;
+  processingNote?: string;
 }
 
 export interface PlannedUpload {
@@ -42,6 +47,16 @@ export function fileNameFromKey(key: string) {
 
 export function fileNameFromPath(path: string) {
   return path.split(/[\\/]/).filter(Boolean).pop() || "r2-object";
+}
+
+export function fileNameFromUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const name = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "");
+    return name || "remote-file";
+  } catch {
+    return "remote-file";
+  }
 }
 
 export function extensionForMime(type: string) {
@@ -108,6 +123,44 @@ export function objectTypeLabel(key: string) {
 
 export function markdownImage(url: string, key: string) {
   return `![${fileNameFromKey(key)}](${url})`;
+}
+
+export function markdownLink(url: string, key: string) {
+  const name = fileNameFromKey(key);
+  return isImageObject(key) ? `![${name}](${url})` : `[${name}](${url})`;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function htmlLink(url: string, key: string) {
+  const name = fileNameFromKey(key);
+  const safeUrl = escapeHtml(url);
+  const safeName = escapeHtml(name);
+  return isImageObject(key)
+    ? `<img src="${safeUrl}" alt="${safeName}" />`
+    : `<a href="${safeUrl}">${safeName}</a>`;
+}
+
+export function formatCopyOutput(url: string, key: string, format: CopyFormat) {
+  if (format === "markdown") return markdownLink(url, key);
+  if (format === "html") return htmlLink(url, key);
+  return url;
+}
+
+export function copyOutputLinesForKeys(keys: string[], publicDomain: string | null, format: CopyFormat) {
+  return keys
+    .map((key) => {
+      const url = buildPublicUrl(publicDomain, key);
+      return url ? formatCopyOutput(url, key, format) : null;
+    })
+    .filter((value): value is string => Boolean(value))
+    .join("\n");
 }
 
 export function buildThumbnailCacheKey(accountId: string, bucketName: string, object: R2Object) {

@@ -120,6 +120,20 @@ export async function uploadR2ObjectBytes(
   });
 }
 
+export async function uploadR2RemoteUrl(
+  bucketName: string,
+  key: string,
+  sourceUrl: string,
+  cacheControl?: string
+): Promise<void> {
+  return invokeCloudflare<void>("upload_r2_remote_url", {
+    bucketName,
+    key,
+    sourceUrl,
+    cacheControl,
+  });
+}
+
 /**
  * Cancel an ongoing upload process.
  */

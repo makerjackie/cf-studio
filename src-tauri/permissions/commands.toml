@@ -27,6 +27,7 @@ commands.allow = [
     "empty_r2_bucket",
     "upload_r2_object",
     "upload_r2_object_bytes",
+    "upload_r2_remote_url",
     "cancel_upload_r2_object",
     "download_r2_object",
     "copy_r2_object",

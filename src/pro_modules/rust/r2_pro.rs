@@ -156,6 +156,49 @@ pub async fn upload_r2_object_bytes(
 }
 
 #[tauri::command]
+pub async fn upload_r2_remote_url(
+    bucket_name: String,
+    key: String,
+    source_url: String,
+    cache_control: Option<String>,
+) -> Result<(), String> {
+    let url = reqwest::Url::parse(&source_url).map_err(|e| format!("Invalid URL: {e}"))?;
+    if url.scheme() != "http" && url.scheme() != "https" {
+        return Err("Only http and https URLs can be uploaded.".to_string());
+    }
+
+    let resp = reqwest::Client::new()
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download remote file: {e}"))?;
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read remote file: {e}"))?;
+
+    if !status.is_success() {
+        let text = String::from_utf8_lossy(&bytes);
+        return Err(format!("Remote download failed with HTTP {status}: {text}"));
+    }
+
+    upload_r2_object_bytes(
+        bucket_name,
+        key,
+        bytes.to_vec(),
+        content_type,
+        cache_control,
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn cancel_upload_r2_object(
     _upload_id: String,
     _bucket_name: String,

@@ -11,7 +11,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { D1Database, CloudflareAccount } from "@/hooks/useCloudflare";
 import type { BucketDomainsInfo, FolderListing, R2Bucket } from "@/lib/r2";
-import type { R2SortDirection, R2SortField, R2ViewMode } from "@/lib/r2AssetUtils";
+import type { ConflictPolicy, CopyFormat, R2SortDirection, R2SortField, R2ViewMode } from "@/lib/r2AssetUtils";
 
 export interface UserProfile {
   id: string;
@@ -82,6 +82,66 @@ export interface R2BucketDomainCacheEntry {
   timestamp: number;
 }
 
+export type R2ImageOutputFormat = "original" | "webp" | "jpeg" | "png";
+
+export interface R2ImageOptimizationSettings {
+  enabled: boolean;
+  outputFormat: R2ImageOutputFormat;
+  quality: number;
+  maxWidth: number | null;
+  maxHeight: number | null;
+  skipIfOutputLarger: boolean;
+}
+
+export interface R2UploadSettings {
+  uploadPrefixInput: string;
+  useDatePrefix: boolean;
+  copyFormat: CopyFormat;
+  conflictPolicy: ConflictPolicy;
+  cacheControl: string;
+  imageOptimization: R2ImageOptimizationSettings;
+}
+
+export type R2UploadSettingsPatch = Partial<Omit<R2UploadSettings, "imageOptimization">> & {
+  imageOptimization?: Partial<R2ImageOptimizationSettings>;
+};
+
+export const DEFAULT_R2_UPLOAD_SETTINGS: R2UploadSettings = {
+  uploadPrefixInput: "",
+  useDatePrefix: false,
+  copyFormat: "url",
+  conflictPolicy: "rename",
+  cacheControl: "",
+  imageOptimization: {
+    enabled: false,
+    outputFormat: "webp",
+    quality: 82,
+    maxWidth: 2400,
+    maxHeight: null,
+    skipIfOutputLarger: true,
+  },
+};
+
+export function r2UploadSettingsKey(accountId: string | null | undefined, bucketName: string): string {
+  return [
+    encodeURIComponent(accountId || "default"),
+    encodeURIComponent(bucketName),
+  ].join("::");
+}
+
+export function r2PinnedBucketKey(accountId: string | null | undefined, bucketName: string): string {
+  return [
+    encodeURIComponent(accountId || "default"),
+    encodeURIComponent(bucketName),
+  ].join("::");
+}
+
+function togglePinnedKey(keys: string[], key: string): string[] {
+  return keys.includes(key)
+    ? keys.filter((item) => item !== key)
+    : [key, ...keys];
+}
+
 // ── Store shape ───────────────────────────────────────────────────────────────
 
 interface AppState {
@@ -95,6 +155,9 @@ interface AppState {
   r2Buckets: R2Bucket[];
   r2ObjectListings: Record<string, R2ObjectListingCacheEntry>;
   r2BucketDomains: Record<string, R2BucketDomainCacheEntry>;
+  r2UploadSettings: Record<string, R2UploadSettings>;
+  pinnedD1DatabaseIds: string[];
+  pinnedR2BucketKeys: string[];
 
   // ── Preferences ──
   tableDensity: "compact" | "comfortable";
@@ -173,6 +236,15 @@ interface AppState {
   /** Cache one R2 bucket's public-domain status. */
   setR2BucketDomain: (cacheKey: string, publicDomain: string | null, domainsInfo: BucketDomainsInfo | null) => void;
 
+  /** Persist upload defaults for one account + bucket. */
+  setR2UploadSettings: (cacheKey: string, settings: R2UploadSettingsPatch) => void;
+
+  /** Toggle one D1 database in the pinned section. */
+  togglePinnedD1Database: (databaseId: string) => void;
+
+  /** Toggle one account-scoped R2 bucket in the pinned section. */
+  togglePinnedR2Bucket: (bucketKey: string) => void;
+
   /**
    * Wipe all cached data and timestamps.
    * Call this when the user switches Cloudflare accounts or logs out.
@@ -199,6 +271,9 @@ export const useAppStore = create<AppState>()(
       r2Buckets: [],
       r2ObjectListings: {},
       r2BucketDomains: {},
+      r2UploadSettings: {},
+      pinnedD1DatabaseIds: [],
+      pinnedR2BucketKeys: [],
       tableDensity: "comfortable",
       showTableColumnCounts: true,
       autoUpdate: true,
@@ -307,6 +382,33 @@ export const useAppStore = create<AppState>()(
           return { r2BucketDomains: next };
         }),
 
+      setR2UploadSettings: (cacheKey, settings) =>
+        set((state) => ({
+          r2UploadSettings: {
+            ...state.r2UploadSettings,
+            [cacheKey]: {
+              ...DEFAULT_R2_UPLOAD_SETTINGS,
+              ...state.r2UploadSettings[cacheKey],
+              ...settings,
+              imageOptimization: {
+                ...DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization,
+                ...state.r2UploadSettings[cacheKey]?.imageOptimization,
+                ...settings.imageOptimization,
+              },
+            },
+          },
+        })),
+
+      togglePinnedD1Database: (databaseId) =>
+        set((state) => ({
+          pinnedD1DatabaseIds: togglePinnedKey(state.pinnedD1DatabaseIds, databaseId),
+        })),
+
+      togglePinnedR2Bucket: (bucketKey) =>
+        set((state) => ({
+          pinnedR2BucketKeys: togglePinnedKey(state.pinnedR2BucketKeys, bucketKey),
+        })),
+
       clearCache: () =>
         set({
           userProfile: null,
@@ -395,6 +497,9 @@ export const useAppStore = create<AppState>()(
         r2Buckets: state.r2Buckets,
         r2ObjectListings: state.r2ObjectListings,
         r2BucketDomains: state.r2BucketDomains,
+        r2UploadSettings: state.r2UploadSettings,
+        pinnedD1DatabaseIds: state.pinnedD1DatabaseIds,
+        pinnedR2BucketKeys: state.pinnedR2BucketKeys,
         lastFetched: state.lastFetched,
         kvLastFetched: state.kvLastFetched,
         r2LastFetched: state.r2LastFetched,
