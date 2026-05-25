@@ -207,35 +207,56 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   );
 }
 
+function workerPrimaryUrl(worker: WorkerSummary) {
+  const domain = worker.domains
+    .map((item) => getString(item, "hostname") ?? getString(item, "domain"))
+    .find(Boolean);
+  if (domain) return `https://${domain}`;
+  return worker.workers_dev_url;
+}
+
+function bindingLabel(binding: unknown) {
+  const type = getString(binding, "type") ?? "binding";
+  const name = getString(binding, "name") ?? getString(binding, "binding") ?? getString(binding, "namespace_name") ?? getString(binding, "queue_name");
+  return name ? `${type}: ${name}` : type;
+}
+
 function WorkerListItem({
   worker,
+  accountId,
   selected,
   onSelect,
 }: {
   worker: WorkerSummary;
+  accountId: string;
   selected: boolean;
   onSelect: () => void;
 }) {
   const hasTraffic = worker.domains.length > 0 || worker.routes.length > 0;
   const workerObservabilityEnabled = observabilityEnabled(worker.observability);
+  const primaryUrl = workerPrimaryUrl(worker);
+  const bindingSummary = worker.bindings.slice(0, 3).map(bindingLabel);
+  const extraBindings = Math.max(0, worker.bindings.length - bindingSummary.length);
 
   return (
-    <button
-      onClick={onSelect}
+    <div
       className={cn(
-        "rounded-lg border border-border bg-background p-4 text-left transition-colors hover:bg-muted/40",
+        "rounded-lg border border-border bg-background p-4 transition-colors hover:bg-muted/40",
         selected && "border-primary/50 bg-primary/5"
       )}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{worker.name}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
+        <button className="min-w-0 flex-1 text-left" onClick={onSelect}>
+          <span className="block truncate text-sm font-semibold">{worker.name}</span>
+          <span className="mt-1 block truncate text-xs text-muted-foreground">
             Updated {dateLabel(worker.modified_on ?? worker.created_on)}
-          </p>
-        </div>
+          </span>
+        </button>
         {hasTraffic ? <Badge variant="secondary">traffic</Badge> : <Badge variant="outline">workers.dev</Badge>}
       </div>
+      <button className="mt-2 block max-w-full truncate font-mono text-[11px] text-muted-foreground" onClick={onSelect}>
+        {primaryUrl ?? "No visible URL"}
+      </button>
       <div className="mt-3 flex flex-wrap gap-2">
         <Badge variant="outline">{worker.bindings.length} bindings</Badge>
         <Badge variant="outline">{worker.domains.length} domains</Badge>
@@ -244,7 +265,40 @@ function WorkerListItem({
           {workerObservabilityEnabled === true ? "observability on" : "observability off"}
         </Badge>
       </div>
-    </button>
+      <div className="mt-3 grid gap-1">
+        {bindingSummary.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No visible bindings.</p>
+        ) : (
+          bindingSummary.map((label, index) => (
+            <p key={`${label}-${index}`} className="truncate text-xs text-muted-foreground">
+              {label}
+            </p>
+          ))
+        )}
+        {extraBindings > 0 && <p className="text-xs text-muted-foreground">+{extraBindings} more bindings</p>}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button variant="outline" size="sm" onClick={onSelect}>
+          Details
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-8 w-8"
+          title="Copy URL"
+          disabled={!primaryUrl}
+          onClick={() => primaryUrl && writeText(primaryUrl, { label: "CF Studio" })}
+        >
+          <Clipboard size={14} />
+        </Button>
+        <Button variant="outline" size="icon" className="h-8 w-8" title="Open Dashboard" onClick={() => open(dashboardUrl(accountId, worker.name))}>
+          <ExternalLink size={14} />
+        </Button>
+        <Button variant="outline" size="icon" className="h-8 w-8" title="Open docs" onClick={() => open(WORKERS_DOCS_URL)}>
+          <Workflow size={14} />
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -1303,6 +1357,7 @@ export function WorkersView({ onNavigate }: WorkersViewProps) {
                 <WorkerListItem
                   key={worker.name}
                   worker={worker}
+                  accountId={overview?.account_id ?? ""}
                   selected={selectedWorker === worker.name}
                   onSelect={() => setSelectedWorker(worker.name)}
                 />
