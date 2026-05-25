@@ -29,11 +29,13 @@ CF Studio 不应该复刻 FlareDesk。Cloudflare 官方已经提供 Local Explor
 - Cloudflare Local Explorer：https://developers.cloudflare.com/workers/development-testing/local-explorer/
 - Workers API：https://developers.cloudflare.com/api/resources/workers/
 - Workers Metrics and Analytics：https://developers.cloudflare.com/workers/observability/metrics-and-analytics/
+- Querying Workers Metrics with GraphQL：https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/
 - Workers Logs：https://developers.cloudflare.com/workers/observability/logs/workers-logs/
 - Workers Versions and Deployments：https://developers.cloudflare.com/workers/configuration/versions-and-deployments/
 - Workers Custom Domains：https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
 - Queues API：https://developers.cloudflare.com/api/resources/queues/
 - R2 Upload objects：https://developers.cloudflare.com/r2/objects/upload-objects/
+- R2 Temporary credentials：https://developers.cloudflare.com/r2/api/s3/temporary-credentials/
 - R2 Public buckets：https://developers.cloudflare.com/r2/buckets/public-buckets/
 - FlareDesk：https://flaredesk.dev/
 - 当前 fork 需求：`docs/makerjackie-fork-requirements.md`
@@ -224,8 +226,9 @@ Overview 是远程资源工作台，不是营销页。
   - 自定义前缀和路径模板。
 - 大文件上传接入官方推荐路径：
   - 小中型文件可用单次 PUT。
-  - 大文件走 multipart 或 S3 兼容 SDK。
-  - UI 中显示是否支持断点重试和并发上传。
+  - 大文件走 R2 S3 multipart。
+  - multipart 使用 R2 S3 temporary credentials 和分片重试。
+  - UI 中显示当前上传路径、断点重试边界和并发上传设置。
 - 增加 public URL 可用性检查：
   - custom domain 优先。
   - `r2.dev` 次之，只标注为开发用途。
@@ -314,16 +317,16 @@ Overview 是远程资源工作台，不是营销页。
 
 需求：
 
-- 第一版通过 Cloudflare GraphQL Analytics API 读取 Workers metrics。
+- 第一版通过 Cloudflare GraphQL Analytics API 读取 Workers invocation metrics。
 - 展示常用指标：
   - 请求数。
   - 成功数。
   - 错误数。
   - 错误率。
   - CPU time。
-  - wall time。
   - invocation status。
   - subrequests。
+- wall time 首版通过 Cloudflare Dashboard / Workers Logs 官方入口查看；后续在官方 API 路径稳定后再接入应用内图表。
 - 支持时间范围：
   - 15 分钟。
   - 1 小时。
