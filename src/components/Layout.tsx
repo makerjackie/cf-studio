@@ -3,6 +3,11 @@ import { open } from "@tauri-apps/plugin-shell";
 import { DatabasesView } from "@/components/DatabasesView";
 import { SettingsView } from "@/components/SettingsView";
 import { PermissionsView } from "@/components/PermissionsView";
+import { KVNamespacesView } from "@/components/KVNamespacesView";
+import { LocalExplorerView } from "@/components/LocalExplorerView";
+import { QueuesView } from "@/components/QueuesView";
+import { RemoteOverviewView } from "@/components/RemoteOverviewView";
+import { WorkersView } from "@/components/WorkersView";
 import {
   Database,
   KeyRound,
@@ -14,8 +19,6 @@ import {
   Monitor,
   CloudCog,
   Box,
-  Activity,
-  ScrollText,
   Github,
   Globe,
   Shield,
@@ -23,6 +26,10 @@ import {
   Mail,
   ScanSearch,
   ShieldCheck,
+  LayoutDashboard,
+  Workflow,
+  MessageSquare,
+  Compass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, type Theme } from "@/components/ThemeProvider";
@@ -346,30 +353,15 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
 }
 
 // ── Simple page router ────────────────────────────────────────────────────────
-function KVNamespacesView() {
-  const { t } = useI18n();
-  return (
-    <div className="flex h-full items-center justify-center">
-      <div className="max-w-md rounded-lg border border-border bg-muted/20 p-6 text-center">
-        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background text-primary">
-          <KeyRound size={20} strokeWidth={1.75} />
-        </div>
-        <Badge variant="secondary" className="mb-3">
-          {t("kv.badge")}
-        </Badge>
-        <h1 className="text-base font-semibold text-foreground">{t("kv.title")}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">{t("kv.subtitle")}</p>
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground/70">{t("kv.body")}</p>
-      </div>
-    </div>
-  );
-}
-
 function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (id: string) => void }) {
   const { t } = useI18n();
+  if (activeId === "overview") return <RemoteOverviewView onNavigate={onNavigate} />;
   if (activeId === "d1") return <DatabasesView />;
   if (activeId === "r2") return <R2BucketsView />;
   if (activeId === "kv") return <KVNamespacesView />;
+  if (activeId === "workers") return <WorkersView onNavigate={onNavigate} />;
+  if (activeId === "queues") return <QueuesView />;
+  if (activeId === "local-explorer") return <LocalExplorerView />;
   if (activeId === "permissions") return <PermissionsView />;
   if (activeId === "settings") return <SettingsView />;
   if (activeId === "audit") return <Overview onNavigate={onNavigate} />;
@@ -399,7 +391,7 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
 export function Layout() {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
-  const [activeId, setActiveId] = useState("r2");
+  const [activeId, setActiveId] = useState("overview");
   const userProfile = useAppStore((s) => s.userProfile);
   const setUserProfile = useAppStore((s) => s.setUserProfile);
   const activeAccount = useAppStore((s) => s.activeAccount);
@@ -408,40 +400,35 @@ export function Layout() {
   const navGroups = useMemo(() => {
     const groups: NavGroup[] = [
       {
+        label: t("nav.overviewGroup"),
+        items: [
+          { id: "overview", label: t("nav.overview"), icon: LayoutDashboard },
+        ],
+      },
+      {
         label: t("nav.storageData"),
         items: [
           { id: "r2", label: t("nav.r2"), icon: Box },
           { id: "d1", label: t("nav.d1"), icon: Database },
-          {
-            id: "kv",
-            label: t("nav.kv"),
-            icon: KeyRound,
-            badge: t("common.soon"),
-          },
+          { id: "kv", label: t("nav.kv"), icon: KeyRound },
         ],
       },
       {
         label: t("nav.compute"),
         items: [
-          {
-            id: "vectorize",
-            label: t("nav.vectorize"),
-            icon: Activity,
-            disabled: true,
-            badge: t("common.soon"),
-          },
+          { id: "workers", label: t("nav.workers"), icon: Workflow },
+          { id: "queues", label: t("nav.queues"), icon: MessageSquare },
+        ],
+      },
+      {
+        label: t("nav.local"),
+        items: [
+          { id: "local-explorer", label: t("nav.localExplorer"), icon: Compass },
         ],
       },
       {
         label: t("nav.system"),
         items: [
-          {
-            id: "logs",
-            label: t("nav.workersLogs"),
-            icon: ScrollText,
-            disabled: true,
-            badge: t("common.soon"),
-          },
           { id: "permissions", label: t("nav.permissions"), icon: ShieldCheck },
           { id: "settings", label: t("nav.settings"), icon: Settings },
         ],

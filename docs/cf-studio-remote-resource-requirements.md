@@ -270,6 +270,7 @@ Overview 是远程资源工作台，不是营销页。
 
 需求：
 
+- 第一版通过 Cloudflare GraphQL Analytics API 读取 `workersInvocationsAdaptive` 数据。
 - 展示常用指标：
   - 请求数。
   - 错误数。
@@ -284,6 +285,7 @@ Overview 是远程资源工作台，不是营销页。
   - 24 小时。
   - 7 天。
 - 支持打开 Cloudflare Dashboard 的对应页面。
+- 如果 Token 缺少 Account Analytics 权限，页面要说明权限缺口，不把它当成 Worker 本身异常。
 
 #### Logs
 
@@ -342,7 +344,8 @@ Overview 是远程资源工作台，不是营销页。
 - 展示 workers.dev URL 状态。
 - 支持复制可访问 URL。
 - 支持打开域名的 Cloudflare Dashboard。
-- 后续支持绑定/解绑 custom domain 或 route。
+- 安全写操作阶段支持绑定/解绑 custom domain。
+- 安全写操作阶段支持添加/删除 route；删除 route 时需要 route id 和 zone id。
 
 风险提示：
 
@@ -398,8 +401,9 @@ Overview 是远程资源工作台，不是营销页。
 - 查询结果复制。
 - CSV/JSON 导出。
 - SQL dump 备份。
+- SQL dump 第一版可直接写入本地 `.sql` 文件，包含 `CREATE TABLE`、用户表数据和索引/视图/触发器语句。
 - 危险 SQL 提示。
-- 小表行编辑。
+- 小表行编辑第一版只支持单一主键表，避免无法稳定定位行时误更新多行。
 - 查询历史。
 - 常用查询模板。
 
@@ -569,12 +573,12 @@ Overview 是远程资源工作台，不是营销页。
 ### Milestone 4：Worker 详情页
 
 - 加入 Overview、Metrics、Logs、Deployments、Bindings、Secrets、Domains & Routes、Cron Triggers。
-- 第一版以只读为主。
-- Secret 管理可以作为首个安全写操作。
+- Metrics 第一版接入 Cloudflare GraphQL Analytics。
+- Secret、workers.dev、Cron Triggers、Custom Domains、Routes 作为第一批确认式安全写操作。
 
 ### Milestone 5：远程资源主线补齐
 
 - R2 素材管理继续作为主功能。
-- D1 补齐导出、备份、查询历史。
+- D1 补齐导出、SQL dump 备份、查询历史。
 - KV 补齐编辑、TTL、JSON 校验。
 - Queues 加入测试消息能力。

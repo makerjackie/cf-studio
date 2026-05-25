@@ -29,6 +29,10 @@ import { useD1Tracker } from "@/hooks/useD1Tracker";
  * and refresh the Wrangler token in the background, then retry the request.
  */
 export async function invokeCloudflare<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+    throw new Error("CF Studio desktop runtime is required to call Cloudflare APIs.");
+  }
+
   try {
     return await invoke<T>(cmd, args);
   } catch (err) {

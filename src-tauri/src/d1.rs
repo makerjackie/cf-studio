@@ -27,6 +27,9 @@ pub enum D1Error {
 
     #[error("Cloudflare API error(s): {0}")]
     Api(String),
+
+    #[error("File system error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl Serialize for D1Error {
@@ -69,6 +72,14 @@ pub struct D1AnalysisResult {
     pub cost_tier: String, // "High", "Medium", "Low"
     pub scanned_tables: Vec<String>,
     pub raw_plan: Vec<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct D1SqlDumpResult {
+    pub path: String,
+    pub tables: u32,
+    pub rows: u64,
+    pub bytes: u64,
 }
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
@@ -192,6 +203,54 @@ async fn execute_query(
     }
 
     Ok(results)
+}
+
+fn quote_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
+fn sql_literal(value: Option<&Value>) -> String {
+    match value {
+        None | Some(Value::Null) => "NULL".to_string(),
+        Some(Value::Bool(value)) => {
+            if *value {
+                "1".to_string()
+            } else {
+                "0".to_string()
+            }
+        }
+        Some(Value::Number(value)) => value.to_string(),
+        Some(Value::String(value)) => format!("'{}'", value.replace('\'', "''")),
+        Some(value @ Value::Array(_)) | Some(value @ Value::Object(_)) => {
+            format!("'{}'", value.to_string().replace('\'', "''"))
+        }
+    }
+}
+
+fn row_string(row: &Value, field: &str) -> Option<String> {
+    row.get(field)
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+async fn table_columns(
+    client: &CloudflareClient,
+    account_id: &str,
+    database_id: &str,
+    table_name: &str,
+) -> Result<Vec<String>, D1Error> {
+    let sql = format!("PRAGMA table_info({});", quote_identifier(table_name));
+    let results = execute_query(client, account_id, database_id, &sql, None).await?;
+    let rows = results
+        .first()
+        .map(|result| &result.results)
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(rows
+        .iter()
+        .filter_map(|row| row_string(row, "name"))
+        .collect())
 }
 
 async fn fetch_table_metadata(
@@ -329,6 +388,161 @@ pub async fn execute_d1_query(
         params,
     )
     .await
+}
+
+#[tauri::command]
+pub async fn export_d1_sql_dump(
+    account_id: String,
+    database_id: String,
+    destination_path: String,
+) -> Result<D1SqlDumpResult, D1Error> {
+    let creds = tokio::task::spawn_blocking(read_credentials)
+        .await
+        .unwrap_or_else(|e| {
+            Err(AuthError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            )))
+        })?;
+
+    let client = CloudflareClient::new(&creds.oauth_token)?;
+    let resolved_account_id = if account_id.is_empty() {
+        match creds.account_id {
+            Some(id) => id,
+            None => resolve_account_id(&client).await?,
+        }
+    } else {
+        account_id
+    };
+
+    let schema_sql = r#"
+        SELECT type, name, tbl_name, sql
+        FROM sqlite_master
+        WHERE sql IS NOT NULL
+          AND name NOT LIKE 'sqlite_%'
+          AND name NOT LIKE '_cf_%'
+        ORDER BY
+          CASE type
+            WHEN 'table' THEN 0
+            WHEN 'view' THEN 1
+            WHEN 'index' THEN 2
+            WHEN 'trigger' THEN 3
+            ELSE 4
+          END,
+          name
+    "#;
+    let schema_results = execute_query(
+        &client,
+        &resolved_account_id,
+        &database_id,
+        schema_sql,
+        None,
+    )
+    .await?;
+    let schema_rows = schema_results
+        .first()
+        .map(|result| result.results.clone())
+        .unwrap_or_default();
+
+    let mut output = String::new();
+    output.push_str("-- CF Studio D1 SQL dump\n");
+    output.push_str("-- Generated from remote Cloudflare D1 data.\n\n");
+    output.push_str("PRAGMA foreign_keys=OFF;\n");
+    output.push_str("BEGIN TRANSACTION;\n\n");
+
+    let mut table_names = Vec::new();
+    let mut deferred_objects = Vec::new();
+
+    for row in &schema_rows {
+        let object_type = row_string(row, "type").unwrap_or_default();
+        let name = row_string(row, "name").unwrap_or_default();
+        let sql = row_string(row, "sql").unwrap_or_default();
+
+        if sql.trim().is_empty() || name.trim().is_empty() {
+            continue;
+        }
+
+        if object_type == "table" {
+            table_names.push(name);
+            output.push_str(sql.trim_end_matches(';'));
+            output.push_str(";\n\n");
+        } else {
+            deferred_objects.push(sql);
+        }
+    }
+
+    let mut exported_rows = 0u64;
+    const PAGE_SIZE: u32 = 500;
+
+    for table_name in &table_names {
+        let columns =
+            table_columns(&client, &resolved_account_id, &database_id, table_name).await?;
+        if columns.is_empty() {
+            continue;
+        }
+
+        let quoted_columns = columns
+            .iter()
+            .map(|column| quote_identifier(column))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut offset = 0u32;
+
+        loop {
+            let sql = format!(
+                "SELECT * FROM {} LIMIT {PAGE_SIZE} OFFSET {offset};",
+                quote_identifier(table_name)
+            );
+            let results =
+                execute_query(&client, &resolved_account_id, &database_id, &sql, None).await?;
+            let rows = results
+                .first()
+                .map(|result| result.results.clone())
+                .unwrap_or_default();
+
+            if rows.is_empty() {
+                break;
+            }
+
+            for row in &rows {
+                let values = columns
+                    .iter()
+                    .map(|column| sql_literal(row.get(column)))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                output.push_str(&format!(
+                    "INSERT INTO {} ({}) VALUES ({});\n",
+                    quote_identifier(table_name),
+                    quoted_columns,
+                    values
+                ));
+                exported_rows += 1;
+            }
+
+            if rows.len() < PAGE_SIZE as usize {
+                break;
+            }
+            offset += PAGE_SIZE;
+        }
+
+        output.push('\n');
+    }
+
+    for sql in deferred_objects {
+        output.push_str(sql.trim_end_matches(';'));
+        output.push_str(";\n");
+    }
+
+    output.push_str("\nCOMMIT;\n");
+
+    std::fs::write(&destination_path, output.as_bytes())?;
+
+    Ok(D1SqlDumpResult {
+        path: destination_path,
+        tables: table_names.len() as u32,
+        rows: exported_rows,
+        bytes: output.len() as u64,
+    })
 }
 
 /// Analyze a SQL query using EXPLAIN QUERY PLAN to detect full table scans.

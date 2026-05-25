@@ -24,7 +24,11 @@ function App() {
   const [windowLabel, setWindowLabel] = useState<string | null>(null);
 
   useEffect(() => {
-    setWindowLabel(getCurrentWindow().label);
+    try {
+      setWindowLabel(getCurrentWindow().label);
+    } catch {
+      setWindowLabel("main");
+    }
     useAppStore.getState().checkFeatureFlags();
   }, []);
 

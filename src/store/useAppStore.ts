@@ -33,7 +33,7 @@ export interface PrivacySettings {
 
 export type AppLanguage = "en-US" | "zh-CN";
 
-// ── KV placeholder type (populated in a future step) ─────────────────────────
+// ── KV cache type ─────────────────────────────────────────────────────────────
 
 export interface KVNamespace {
   id: string;

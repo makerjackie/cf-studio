@@ -6,6 +6,7 @@ pub mod d1;
 pub mod db;
 pub mod permissions;
 pub mod r2;
+pub mod remote_resources;
 pub mod setup;
 pub mod shell_env;
 pub mod user;
@@ -179,6 +180,7 @@ pub fn run() {
             cloudflare_auth::saved_cloudflare_api_token_status,
             d1::fetch_d1_databases,
             d1::execute_d1_query,
+            d1::export_d1_sql_dump,
             d1::analyze_d1_query,
             user::fetch_user_profile,
             // ── Domain Audit (Pro) ──
@@ -219,6 +221,27 @@ pub fn run() {
             r2_pro::remove_r2_bucket_custom_domain,
             r2_pro::get_r2_bucket_domains_list,
             permissions::check_cloudflare_permissions,
+            remote_resources::fetch_kv_namespaces,
+            remote_resources::list_kv_keys,
+            remote_resources::get_kv_entry,
+            remote_resources::put_kv_entry,
+            remote_resources::delete_kv_entry,
+            remote_resources::fetch_workers_overview,
+            remote_resources::fetch_worker_detail,
+            remote_resources::set_worker_subdomain,
+            remote_resources::update_worker_schedules,
+            remote_resources::start_worker_tail,
+            remote_resources::fetch_worker_metrics,
+            remote_resources::attach_worker_domain,
+            remote_resources::detach_worker_domain,
+            remote_resources::attach_worker_route,
+            remote_resources::detach_worker_route,
+            remote_resources::upsert_worker_secret,
+            remote_resources::delete_worker_secret,
+            remote_resources::fetch_queues_overview,
+            remote_resources::fetch_queue_detail,
+            remote_resources::send_queue_message,
+            remote_resources::send_queue_batch,
             // ── Setup ──
             setup::check_dependencies,
             setup::install_dependencies,

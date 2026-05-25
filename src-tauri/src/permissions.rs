@@ -221,6 +221,18 @@ pub async fn check_cloudflare_permissions() -> Result<Vec<PermissionCheck>, Perm
             "Account Workers KV Storage:Read",
             "Account Workers KV Storage:Edit",
         ),
+        (
+            "Workers",
+            format!("accounts/{account_id}/workers/scripts"),
+            "Account Workers Scripts:Read",
+            "Account Workers Scripts:Edit",
+        ),
+        (
+            "Queues",
+            format!("accounts/{account_id}/queues"),
+            "Account Queues:Read",
+            "Account Queues:Edit",
+        ),
     ];
 
     for (product, endpoint, read_permission, write_permission) in products {

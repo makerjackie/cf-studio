@@ -4,6 +4,7 @@
 // Tabs (in order): SQL Editor | Data | Schema | Visual Schema
 
 import { useState, useEffect, useRef } from "react";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft, Table2, RefreshCw, Database,
   ChevronRight, AlertCircle, BookOpen,
@@ -24,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -50,13 +52,22 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
+import { useToast } from "@/components/ui/use-toast";
 import {
   useD1Schema,
   useD1TableData,
+  invokeCloudflare,
   type D1Database,
   type D1TableSchema,
   type D1Column,
 } from "@/hooks/useCloudflare";
+
+interface D1SqlDumpResult {
+  path: string;
+  tables: number;
+  rows: number;
+  bytes: number;
+}
 
 
 // ── SQL formatter ─────────────────────────────────────────────────────────────
@@ -67,6 +78,10 @@ function formatSql(raw: string): string {
     .replace(/\(\s*/g, "(\n  ")
     .replace(/\s*\)/g, "\n)")
     .trim();
+}
+
+function quoteSqlIdentifier(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
 const SQL_KW = new Set([
@@ -202,6 +217,9 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
   const [customLimitInput, setCustomLimitInput] = useState("1000");
 
   const [editingColumn, setEditingColumn] = useState<D1Column | null>(null);
+  const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
+  const [editingRowJson, setEditingRowJson] = useState("");
+  const [rowEditStatus, setRowEditStatus] = useState<"idle" | "saving">("idle");
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[]>([]);
   const [sortCol, setSortCol] = useState<string | undefined>();
@@ -250,6 +268,8 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
     state.status === "success"
       ? state.data.columns.find((c) => c.isPrimary)?.name || null
       : null;
+  const primaryColumns = state.status === "success" ? state.data.columns.filter((c) => c.isPrimary) : [];
+  const rowEditPrimaryColumn = primaryColumns.length === 1 ? primaryColumns[0] : null;
 
   const rowsToExport =
     state.status === "success"
@@ -258,6 +278,58 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
         ? state.data.rows
         : selectedRowIndices.map((i) => state.data.rows[i])
       : [];
+
+  const openRowEditor = (row: Record<string, unknown>) => {
+    setEditingRow(row);
+    setEditingRowJson(JSON.stringify(row, null, 2));
+  };
+
+  const saveRowEdit = async () => {
+    if (!editingRow || !rowEditPrimaryColumn || state.status !== "success") return;
+
+    let parsed: Record<string, unknown>;
+    try {
+      const value = JSON.parse(editingRowJson);
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error(t("d1.rowEditInvalidJson"));
+      }
+      parsed = value as Record<string, unknown>;
+    } catch (err) {
+      alert(String(err));
+      return;
+    }
+
+    const editableColumns = state.data.columns.filter((column) => column.name !== rowEditPrimaryColumn.name);
+    if (editableColumns.length === 0) return;
+
+    const sql = `UPDATE ${quoteSqlIdentifier(table.name)} SET ${editableColumns
+      .map((column) => `${quoteSqlIdentifier(column.name)} = ?`)
+      .join(", ")} WHERE ${quoteSqlIdentifier(rowEditPrimaryColumn.name)} = ?;`;
+    const params = [
+      ...editableColumns.map((column) => parsed[column.name] ?? null),
+      editingRow[rowEditPrimaryColumn.name] ?? null,
+    ];
+
+    const confirmed = window.confirm(t("d1.rowEditConfirm", { table: table.name }));
+    if (!confirmed) return;
+
+    setRowEditStatus("saving");
+    try {
+      await invokeCloudflare("execute_d1_query", {
+        accountId: "",
+        databaseId,
+        sqlQuery: sql,
+        params,
+      });
+      setEditingRow(null);
+      setEditingRowJson("");
+      refresh();
+    } catch (err) {
+      alert(`${t("d1.rowEditFailed")}: ${String(err)}`);
+    } finally {
+      setRowEditStatus("idle");
+    }
+  };
 
   useEffect(() => {
     setSelectedRowIndices([]);
@@ -369,10 +441,13 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                     />
                   </TableHead>
                   {/* Row number gutter */}
-                  <TableHead className={`w-10 text-center text-[10px] text-muted-foreground/40 font-mono px-2 shrink-0 border-r border-border ${paddingY}`}>
-                    #
-                  </TableHead>
-                  {state.data.columns.map((col) => (
+	                  <TableHead className={`w-10 text-center text-[10px] text-muted-foreground/40 font-mono px-2 shrink-0 border-r border-border ${paddingY}`}>
+	                    #
+	                  </TableHead>
+	                  <TableHead className={`w-16 text-center text-[10px] text-muted-foreground/40 font-mono px-2 shrink-0 border-r border-border ${paddingY}`}>
+	                    {t("common.actions")}
+	                  </TableHead>
+	                  {state.data.columns.map((col) => (
                     <TableHead
                       key={col.name}
                       className={`text-xs font-medium text-foreground whitespace-nowrap bg-muted/40 border-r border-border last:border-r-0 ${paddingY} px-0 group`}
@@ -517,10 +592,22 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                       />
                     </TableCell>
                     {/* Row number */}
-                    <TableCell className={`text-center text-muted-foreground/30 px-2 select-none tabular-nums border-r border-border/50 ${paddingY}`}>
-                      {state.data.offset + ri + 1}
-                    </TableCell>
-                    {state.data.columns.map((col) => {
+	                    <TableCell className={`text-center text-muted-foreground/30 px-2 select-none tabular-nums border-r border-border/50 ${paddingY}`}>
+	                      {state.data.offset + ri + 1}
+	                    </TableCell>
+	                    <TableCell className={`text-center px-2 border-r border-border/50 ${paddingY}`}>
+	                      <Button
+	                        variant="ghost"
+	                        size="icon"
+	                        className="h-6 w-6"
+	                        onClick={() => openRowEditor(row)}
+	                        disabled={!rowEditPrimaryColumn}
+	                        title={rowEditPrimaryColumn ? t("d1.editRow") : t("d1.rowEditNeedsPk")}
+	                      >
+	                        <Edit size={12} />
+	                      </Button>
+	                    </TableCell>
+	                    {state.data.columns.map((col) => {
                       const val = row[col.name];
                       const isNull = val === null || val === undefined;
                       const isEmpty = val === "";
@@ -573,6 +660,45 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
           refresh();
         }}
       />
+
+      <Dialog open={!!editingRow} onOpenChange={(open) => {
+        if (!open) {
+          setEditingRow(null);
+          setEditingRowJson("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-[640px] border-border/60 shadow-2xl">
+          <DialogTitle className="text-sm font-semibold">{t("d1.rowEditTitle")}</DialogTitle>
+          <div className="space-y-3">
+            <p className="text-sm leading-6 text-muted-foreground">
+              {rowEditPrimaryColumn
+                ? t("d1.rowEditDesc", { column: rowEditPrimaryColumn.name })
+                : t("d1.rowEditNeedsPk")}
+            </p>
+            <Textarea
+              value={editingRowJson}
+              onChange={(event) => setEditingRowJson(event.target.value)}
+              className="min-h-[260px] font-mono text-xs"
+              spellCheck={false}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingRow(null);
+                  setEditingRowJson("");
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button onClick={saveRowEdit} disabled={!rowEditPrimaryColumn || rowEditStatus === "saving"}>
+                {rowEditStatus === "saving" && <RefreshCw size={13} className="mr-2 animate-spin" />}
+                {t("d1.rowEditSave")}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Pagination footer */}
       {(hasPrev || hasNext || state.status === "success") && (
@@ -753,12 +879,14 @@ interface DatabaseExplorerProps {
 
 export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
   const { t } = useI18n();
+  const { toast } = useToast();
   const [selectedTable, setSelectedTable] = useState<D1TableSchema | null>(null);
   const [systemOpen, setSystemOpen] = useState(false);
   const [isVisualSchemaOpen, setIsVisualSchemaOpen] = useState(false);
   const [isQueryEditorOpen, setIsQueryEditorOpen] = useState(false);
   const [isIndexManagerOpen, setIsIndexManagerOpen] = useState(false);
   const [showPurchaseScreen, setShowPurchaseScreen] = useState(false);
+  const [isDumping, setIsDumping] = useState(false);
   const { data: configData } = useRemoteConfig();
   const userPickedRef = useRef(false);          // true once user manually clicks a table
   const { state, refresh } = useD1Schema(database.uuid);
@@ -784,6 +912,36 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
   const handleTableSelect = (table: D1TableSchema) => {
     userPickedRef.current = true;
     setSelectedTable(table);
+  };
+
+  const exportSqlDump = async () => {
+    const date = new Date().toISOString().slice(0, 10);
+    const defaultPath = `${database.name || "d1-database"}-${date}.sql`;
+    const destinationPath = await save({
+      defaultPath,
+      filters: [{ name: "SQL", extensions: ["sql"] }],
+    });
+    if (!destinationPath) return;
+
+    setIsDumping(true);
+    try {
+      const result = await invokeCloudflare<D1SqlDumpResult>("export_d1_sql_dump", {
+        accountId: "",
+        databaseId: database.uuid,
+        destinationPath,
+      });
+      toast({
+        title: t("d1.dumpExported"),
+        description: t("d1.dumpExportedDesc", {
+          tables: result.tables,
+          rows: result.rows,
+        }),
+      });
+    } catch (err) {
+      toast({ title: t("d1.dumpFailed"), description: String(err), variant: "destructive" });
+    } finally {
+      setIsDumping(false);
+    }
   };
 
   // Pass the full DB-level schema (user + system) to the ER visualizer.
@@ -827,6 +985,16 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
             <Network size={11} strokeWidth={2.5} />
             {t("d1.visualSchema")}
           </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-6 gap-1.5 px-2 text-[10px] uppercase tracking-wider"
+            onClick={exportSqlDump}
+            disabled={isDumping}
+          >
+            {isDumping ? <RefreshCw size={11} className="animate-spin" /> : <Download size={11} />}
+            {t("d1.sqlDump")}
+          </Button>
           <Badge 
             variant="outline" 
             className="gap-1.5 ml-1.5 px-2 cursor-pointer hover:bg-muted font-medium text-[10px] uppercase tracking-wider shrink-0 transition-colors"

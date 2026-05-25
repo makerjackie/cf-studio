@@ -26,6 +26,7 @@ interface SetupProgress {
 }
 
 type Phase = "checking" | "missing" | "installing" | "done" | "error";
+const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ interface SetupWizardProps {
 
 export function SetupWizard({ children }: SetupWizardProps) {
   const { t } = useI18n();
-  const [phase, setPhase] = useState<Phase>("checking");
+  const [phase, setPhase] = useState<Phase>(isTauriRuntime ? "checking" : "done");
   const [status, setStatus] = useState<DependencyStatus | null>(null);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("Checking dependencies…");
@@ -43,6 +44,8 @@ export function SetupWizard({ children }: SetupWizardProps) {
 
   // ── Initial dependency check ─────────────────────────────────────────
   useEffect(() => {
+    if (!isTauriRuntime) return;
+
     let cancelled = false;
     invoke<DependencyStatus>("check_dependencies")
       .then((res) => {
@@ -66,6 +69,8 @@ export function SetupWizard({ children }: SetupWizardProps) {
 
   // ── Install handler ──────────────────────────────────────────────────
   const handleInstall = useCallback(async () => {
+    if (!isTauriRuntime) return;
+
     setPhase("installing");
     setProgress(0);
     setMessage("Starting installation…");

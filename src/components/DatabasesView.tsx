@@ -3,7 +3,7 @@
 // D1 Databases listing page — auto-fetches from the Cloudflare API.
 // Clicking a row drills into DatabaseExplorer for schema inspection.
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { RefreshCw, Database, Terminal, AlertCircle, Loader2, HardDrive, ChevronRight, History, Pin } from "lucide-react";
 import {
   Table,
@@ -23,7 +23,6 @@ import { useD1Databases, type D1Database, invokeCloudflare } from "@/hooks/useCl
 import { DatabaseExplorer } from "@/components/DatabaseExplorer";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useToast } from "@/components/ui/use-toast";
-import { ProFeatureGate } from "@/pro_modules/frontend/ProFeatureGate";
 import { useI18n } from "@/lib/i18n";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -313,25 +312,14 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
   const { t } = useI18n();
   const { state, refresh } = useD1Databases();
   const activeAccount = useAppStore((s) => s.activeAccount);
-  const enableD1History = useAppStore((s) => s.enableD1History);
   const pinnedD1DatabaseIds = useAppStore((s) => s.pinnedD1DatabaseIds);
   const togglePinnedD1Database = useAppStore((s) => s.togglePinnedD1Database);
   const isLoading = state.status === "loading" || state.status === "idle";
-  const [hasProHistory, setHasProHistory] = useState(false);
-  const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
-  const { toast } = useToast();
   const databases = state.status === "success" ? state.data : [];
   const sortedDatabases = useMemo(
     () => orderPinnedFirst(databases, pinnedD1DatabaseIds, (db) => db.uuid),
     [databases, pinnedD1DatabaseIds]
   );
-
-  useEffect(() => {
-    // Check if the Pro History module exists on disk (compilation check)
-    import("@/pro_modules/ui/ActivityDashboard")
-      .then(() => setHasProHistory(true))
-      .catch(() => setHasProHistory(false));
-  }, []);
 
   return (
     <div className="flex flex-col gap-5 h-full">
@@ -349,20 +337,6 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
               variant="ghost"
               size="icon"
               onClick={() => {
-                  if (!enableD1History) {
-                      setIsPurchaseOpen(true);
-                      return;
-                  }
-
-                  if (!hasProHistory) {
-                      toast({
-                        title: t("d1.historyRequired"),
-                        description: t("d1.historyRequiredDesc"),
-                        variant: "destructive",
-                      });
-                      return;
-                  }
-                  console.log("Opening history window...");
                   const storedTheme = localStorage.getItem("cf-studio-theme") || "dark";
                   const historyUrl = `index.html?theme=${encodeURIComponent(storedTheme)}`;
                   const webview = new WebviewWindow("history", {
@@ -375,31 +349,25 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
                   });
                   
                   webview.once("tauri://created", () => {
-                     console.log("History window created successfully");
                      webview.show();
                      webview.setFocus();
                   });
 
                   webview.once("tauri://error", (e) => {
-                     console.error("Failed to create history window:", e);
+                     console.error(e);
                      WebviewWindow.getByLabel("history").then(win => {
                          if (win) {
                              win.show();
                              win.setFocus();
                          }
-                     });
+                      });
                   });
               }}
-              title={enableD1History && hasProHistory ? t("d1.queryHistory") : t("d1.queryHistoryPro")}
+              title={t("d1.queryHistory")}
               className="text-muted-foreground hover:text-foreground"
             >
               <History size={15} strokeWidth={2} />
             </Button>
-            {(!enableD1History || !hasProHistory) && (
-              <span className="absolute -top-1 -right-1 px-1 bg-amber-500 text-[8px] font-bold text-white rounded-sm pointer-events-none scale-75 uppercase">
-                {t("common.pro")}
-              </span>
-            )}
           </div>
           <Button
             variant="ghost"
@@ -482,12 +450,6 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
           </div>
         )}
       </div>
-
-      <ProFeatureGate 
-        isOpen={isPurchaseOpen} 
-        onClose={() => setIsPurchaseOpen(false)} 
-        featureName="history"
-      />
     </div>
   );
 }
