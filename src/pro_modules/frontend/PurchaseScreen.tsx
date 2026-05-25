@@ -1,15 +1,17 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 export function PurchaseScreen({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
-        <DialogTitle>Feature unavailable</DialogTitle>
+        <DialogTitle>{t("feature.unavailable")}</DialogTitle>
         <DialogDescription>
-          This public fork ships without the original private Pro module. Add your own implementation here when the workflow is worth keeping.
+          {t("feature.publicForkNoPro")}
         </DialogDescription>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t("common.close")}</Button>
       </DialogContent>
     </Dialog>
   );

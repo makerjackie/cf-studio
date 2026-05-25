@@ -1,5 +1,6 @@
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 export function ProFeatureGate({
   isOpen,
@@ -10,14 +11,15 @@ export function ProFeatureGate({
   onClose: () => void;
   featureName?: string;
 }) {
+  const { t } = useI18n();
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
-        <DialogTitle>Feature unavailable</DialogTitle>
+        <DialogTitle>{t("feature.unavailable")}</DialogTitle>
         <DialogDescription>
-          {featureName ? `${featureName} is not included in this public fork yet.` : "This feature is not included in this public fork yet."}
+          {featureName ? t("feature.unavailableNamed", { feature: featureName }) : t("feature.unavailableBody")}
         </DialogDescription>
-        <Button onClick={onClose}>Close</Button>
+        <Button onClick={onClose}>{t("common.close")}</Button>
       </DialogContent>
     </Dialog>
   );

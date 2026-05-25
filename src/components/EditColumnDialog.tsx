@@ -33,6 +33,7 @@ import { type D1Column, D1TableSchema, D1ForeignKey, D1QueryResult, invokeCloudf
 import { useToast } from "@/components/ui/use-toast";
 import { useAppStore } from "@/store/useAppStore";
 import { useD1Tracker } from "@/hooks/useD1Tracker";
+import { useI18n } from "@/lib/i18n";
 
 type DraftForeignKey = D1ForeignKey & {
   isNew: boolean;
@@ -126,6 +127,7 @@ export function EditColumnDialog({
   existingPrimaryKeyColumn,
   onSuccess,
 }: EditColumnDialogProps) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const [draftColumn, setDraftColumn] = useState({
     name: "",
@@ -147,6 +149,17 @@ export function EditColumnDialog({
   const [isApplying, setIsApplying] = useState(false);
   const activeAccount = useAppStore(state => state.activeAccount);
   const { executeTrackedQuery } = useD1Tracker();
+  const fkActions = ["No action", "Cascade", "Restrict", "Set NULL", "Set default"];
+  const fkActionLabel = (action: string) => {
+    const labels: Record<string, ReturnType<typeof t>> = {
+      "No action": t("d1.edit.actionNoAction"),
+      Cascade: t("d1.edit.actionCascade"),
+      Restrict: t("d1.edit.actionRestrict"),
+      "Set NULL": t("d1.edit.actionSetNull"),
+      "Set default": t("d1.edit.actionSetDefault"),
+    };
+    return labels[action] ?? action;
+  };
 
   useEffect(() => {
     if (column && open) {
@@ -173,20 +186,20 @@ export function EditColumnDialog({
     const diffs: string[] = [];
 
     if (draftColumn.name !== column.name) {
-      diffs.push(`Renamed column from "${column.name}" to "${draftColumn.name}"`);
+      diffs.push(t("d1.edit.diffRenamed", { from: column.name, to: draftColumn.name }));
     }
     if (draftColumn.type !== (column.type || "text")) {
-      diffs.push(`Changed type from "${column.type || "text"}" to "${draftColumn.type}"`);
+      diffs.push(t("d1.edit.diffType", { from: column.type || "text", to: draftColumn.type }));
     }
     if (draftColumn.isNullable !== !!column.isNullable) {
-      diffs.push(`Changed nullable from ${!!column.isNullable ? "TRUE" : "FALSE"} to ${draftColumn.isNullable ? "TRUE" : "FALSE"}`);
+      diffs.push(t("d1.edit.diffNullable", { from: !!column.isNullable ? "TRUE" : "FALSE", to: draftColumn.isNullable ? "TRUE" : "FALSE" }));
     }
     if (draftColumn.isPrimary !== !!column.isPrimary) {
-      if (draftColumn.isPrimary) diffs.push(`Added Primary Key constraint`);
-      else diffs.push(`Removed Primary Key constraint`);
+      if (draftColumn.isPrimary) diffs.push(t("d1.edit.diffAddedPrimary"));
+      else diffs.push(t("d1.edit.diffRemovedPrimary"));
     }
     if (draftColumn.defaultValue !== (column.defaultValue || "")) {
-      diffs.push(`Changed default value from "${column.defaultValue || "NULL"}" to "${draftColumn.defaultValue || "NULL"}"`);
+      diffs.push(t("d1.edit.diffDefault", { from: column.defaultValue || "NULL", to: draftColumn.defaultValue || "NULL" }));
     }
 
     const originalFks = column.foreignKeys || [];
@@ -195,14 +208,14 @@ export function EditColumnDialog({
     draftFks.forEach(newFk => {
       const exists = originalFks.some(oldFk => oldFk.table === newFk.table && oldFk.column === newFk.column);
       if (!exists) {
-        diffs.push(`Added Foreign Key referencing ${newFk.table}.${newFk.column}`);
+        diffs.push(t("d1.edit.diffAddedForeign", { table: newFk.table, column: newFk.column }));
       }
     });
 
     originalFks.forEach(oldFk => {
       const exists = draftFks.some(newFk => newFk.table === oldFk.table && newFk.column === oldFk.column);
       if (!exists) {
-        diffs.push(`Removed Foreign Key referencing ${oldFk.table}.${oldFk.column}`);
+        diffs.push(t("d1.edit.diffRemovedForeign", { table: oldFk.table, column: oldFk.column }));
       }
     });
 
@@ -218,7 +231,7 @@ export function EditColumnDialog({
     if (!column) return;
     setIsApplying(true);
     try {
-      if (!activeAccount?.id) throw new Error("No active account selected.");
+      if (!activeAccount?.id) throw new Error(t("d1.edit.noActiveAccount"));
       
       const statements = generateTableRecreationSQL(tableName, tableColumns, column.name, draftColumn, draftColumn.draftRelations.filter(fk => !fk.isDeleted));
       
@@ -243,13 +256,13 @@ export function EditColumnDialog({
         
         const failed = results.find(r => !r.success);
         if (failed) {
-          throw new Error(failed.error || "Query failed to execute successfully.");
+          throw new Error(failed.error || t("d1.edit.queryFailed"));
         }
       }
       
       toast({
-        title: "Success",
-        description: "Schema updated successfully.",
+        title: t("common.success"),
+        description: t("d1.edit.toastSuccess"),
       });
       
       setConfirmOpen(false);
@@ -257,7 +270,7 @@ export function EditColumnDialog({
     } catch (error: any) {
       console.error(error);
       toast({
-        title: "Error applying changes",
+        title: t("d1.edit.toastError"),
         description: error.message || String(error),
         variant: "destructive"
       });
@@ -274,36 +287,36 @@ export function EditColumnDialog({
       <DialogContent className="max-w-2xl p-0 gap-0 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
         <DialogHeader className="p-6 pb-4 border-b border-border bg-muted/30 shrink-0">
           <DialogTitle className="text-sm font-medium font-mono text-foreground">
-            Update column <span className="text-foreground">{column.name}</span> from <span className="text-foreground">{tableName}</span>
+            {t("d1.edit.title", { column: column.name, table: tableName })}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-background">
           <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3">
             <p className="text-xs text-muted-foreground">
-              Column editing is preview-only right now. Support for real schema changes is coming soon.
+              {t("d1.edit.previewOnly")}
             </p>
           </div>
 
           {/* General Section */}
           <div className="grid grid-cols-[1fr_2.5fr] gap-6">
-            <div className="text-sm font-medium text-foreground/80">General</div>
+            <div className="text-sm font-medium text-foreground/80">{t("d1.edit.general")}</div>
             <div className="space-y-5">
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Name</Label>
+                <Label className="text-xs text-muted-foreground">{t("d1.edit.name")}</Label>
                 <Input
                   value={draftColumn.name}
                   onChange={(e) => setDraftColumn({ ...draftColumn, name: e.target.value })}
                   className="font-mono h-9 text-sm"
                 />
                 <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
-                  Recommended to use lowercase and use an underscore to separate words e.g. column_name
+                  {t("d1.edit.nameHelp")}
                 </p>
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                  <Label className="text-xs text-muted-foreground">Description</Label>
-                  <span className="text-[10px] text-muted-foreground/60 uppercase">Optional</span>
+                  <Label className="text-xs text-muted-foreground">{t("d1.edit.description")}</Label>
+                  <span className="text-[10px] text-muted-foreground/60 uppercase">{t("common.optional")}</span>
                 </div>
                 <Textarea
                   className="min-h-[60px] resize-none"
@@ -317,19 +330,19 @@ export function EditColumnDialog({
           {/* Data Type Section */}
           <div className="grid grid-cols-[1fr_2.5fr] gap-6">
             <div className="space-y-2 text-sm font-medium text-foreground/80">
-              Data Type
+              {t("d1.edit.dataType")}
               <div className="flex flex-col gap-2 mt-4">
                 <Button variant="outline" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground justify-start">
-                  + Create enum types
+                  {t("d1.edit.createEnum")}
                 </Button>
                 <Button variant="outline" size="sm" className="h-7 text-xs text-muted-foreground hover:text-foreground justify-start">
-                  <Info size={12} className="mr-1.5" /> About data types
+                  <Info size={12} className="mr-1.5" /> {t("d1.edit.aboutTypes")}
                 </Button>
               </div>
             </div>
             <div className="space-y-5">
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Type</Label>
+                <Label className="text-xs text-muted-foreground">{t("d1.edit.type")}</Label>
                 <Select value={draftColumn.type} onValueChange={(val) => setDraftColumn({ ...draftColumn, type: val })}>
                   <SelectTrigger className="w-full h-9 font-mono text-sm">
                     <span className="text-muted-foreground/50 mr-2 text-xs">T</span> <SelectValue />
@@ -349,16 +362,16 @@ export function EditColumnDialog({
                 <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-4 flex gap-3">
                   <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
                   <div className="space-y-2">
-                    <h4 className="text-sm font-medium text-amber-500/90 leading-none">It is recommended to use <code className="bg-amber-500/20 px-1 py-0.5 rounded text-amber-400">text</code> instead</h4>
+                    <h4 className="text-sm font-medium text-amber-500/90 leading-none">{t("d1.edit.varcharTitle")}</h4>
                     <p className="text-xs text-amber-500/70 leading-relaxed">
-                      SQLite recommends against using the data type <code className="bg-amber-500/20 px-1 rounded">varchar</code> unless you have a very specific use case.
+                      {t("d1.edit.varcharBody")}
                     </p>
                     <div className="flex gap-2 pt-1">
                       <Button variant="outline" size="sm" className="h-7 text-xs border-amber-500/30 text-amber-500/90 bg-transparent hover:bg-amber-500/10">
-                        Read more
+                        {t("d1.edit.readMore")}
                       </Button>
                       <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-500 text-white border-0" onClick={() => setDraftColumn({ ...draftColumn, type: "text" })}>
-                        Use text
+                        {t("d1.edit.useText")}
                       </Button>
                     </div>
                   </div>
@@ -368,13 +381,13 @@ export function EditColumnDialog({
               <div className="flex items-start gap-2 pt-2">
                  <div className="mt-1 flex h-4 w-4 items-center justify-center rounded border border-border bg-muted/30" />
                  <div>
-                   <Label className="text-xs text-foreground font-medium">Define as Array</Label>
-                   <p className="text-[10px] text-muted-foreground">Allow column to be defined as variable-length multidimensional arrays</p>
+                   <Label className="text-xs text-foreground font-medium">{t("d1.edit.defineArray")}</Label>
+                   <p className="text-[10px] text-muted-foreground">{t("d1.edit.defineArrayBody")}</p>
                  </div>
               </div>
 
               <div className="space-y-2 pt-4">
-                <Label className="text-xs text-muted-foreground">Default Value</Label>
+                <Label className="text-xs text-muted-foreground">{t("d1.edit.defaultValue")}</Label>
                 <div className="relative">
                   <Input
                     placeholder="NULL"
@@ -387,7 +400,7 @@ export function EditColumnDialog({
                   </div>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1.5 leading-relaxed">
-                  Can either be a literal or an expression. When using an expression wrap your expression in brackets, e.g. (gen_random_uuid())
+                  {t("d1.edit.defaultValueHelp")}
                 </p>
               </div>
             </div>
@@ -397,10 +410,10 @@ export function EditColumnDialog({
 
           {/* Foreign Keys */}
           <div className="grid grid-cols-[1fr_2.5fr] gap-6">
-            <div className="text-sm font-medium text-foreground/80 text-left">Foreign Keys</div>
+            <div className="text-sm font-medium text-foreground/80 text-left">{t("d1.edit.foreignKeys")}</div>
             <div className="space-y-4">
               <Button variant="outline" size="sm" onClick={() => setFkOpen(true)} className="h-7 text-xs text-muted-foreground hover:text-foreground">
-                Add foreign key
+                {t("d1.edit.addForeignKey")}
               </Button>
               {draftColumn.draftRelations.length > 0 && (
                 <div className="space-y-2">
@@ -412,7 +425,7 @@ export function EditColumnDialog({
                             ? 'bg-blue-500/15 text-blue-400'
                             : 'bg-emerald-500/15 text-emerald-400'
                         }`}>
-                          {rel.isNew ? 'New' : 'Saved'}
+                          {rel.isNew ? t("d1.edit.new") : t("d1.edit.saved")}
                         </span>
                         <span className={`text-xs font-mono truncate transition-all duration-200 ${
                           rel.isDeleted ? 'line-through opacity-40 text-muted-foreground' : 'text-foreground'
@@ -448,7 +461,7 @@ export function EditColumnDialog({
 
           {/* Constraints Section */}
           <div className="grid grid-cols-[1fr_2.5fr] gap-6 pb-6">
-             <div className="text-sm font-medium text-foreground/80">Constraints</div>
+             <div className="text-sm font-medium text-foreground/80">{t("d1.edit.constraints")}</div>
              <div className="space-y-6">
                  <div className="flex items-start gap-4">
                    <Switch
@@ -458,16 +471,16 @@ export function EditColumnDialog({
                      className="mt-0.5"
                    />
                    <div>
-                     <Label className="text-sm font-medium">Is Primary Key</Label>
-                     <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 hidden lg:block">A primary key indicates that a column or group of columns can be used as a unique identifier for rows in the table</p>
+                     <Label className="text-sm font-medium">{t("d1.edit.isPrimaryKey")}</Label>
+                     <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 hidden lg:block">{t("d1.edit.primaryKeyHelp")}</p>
                      {!!existingPrimaryKeyColumn && existingPrimaryKeyColumn !== column.name && (
                        <p className="text-[10px] text-muted-foreground mt-1.5">
-                         Table already has a primary key: {existingPrimaryKeyColumn}
+                         {t("d1.edit.tableHasPrimaryKey", { column: existingPrimaryKeyColumn })}
                        </p>
                      )}
                      {!!existingPrimaryKeyColumn && existingPrimaryKeyColumn === column.name && !draftColumn.isPrimary && (
                        <p className="text-[10px] text-amber-500 mt-1.5">
-                         Warning: This table will not have any primary key.
+                         {t("d1.edit.noPrimaryKeyWarning")}
                        </p>
                      )}
                    </div>
@@ -476,23 +489,23 @@ export function EditColumnDialog({
                  <div className="flex items-start gap-4">
                    <Switch checked={draftColumn.isNullable} onCheckedChange={(val) => setDraftColumn({ ...draftColumn, isNullable: val })} className="mt-0.5" />
                    <div>
-                     <Label className="text-sm font-medium">Allow Nullable</Label>
-                     <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 hidden lg:block">Allow the column to assume a NULL value if no value is provided</p>
+                     <Label className="text-sm font-medium">{t("d1.edit.allowNullable")}</Label>
+                     <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 hidden lg:block">{t("d1.edit.allowNullableHelp")}</p>
                    </div>
                  </div>
 
                  <div className="flex items-start gap-4">
                    <Switch checked={draftColumn.isUnique} onCheckedChange={(val) => setDraftColumn({ ...draftColumn, isUnique: val })} className="mt-0.5" />
                    <div>
-                     <Label className="text-sm font-medium">Is Unique</Label>
-                     <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 hidden lg:block">Enforce values in the column to be unique across rows</p>
+                     <Label className="text-sm font-medium">{t("d1.edit.isUnique")}</Label>
+                     <p className="text-[11px] text-muted-foreground leading-relaxed mt-1 hidden lg:block">{t("d1.edit.isUniqueHelp")}</p>
                    </div>
                  </div>
 
                 <div className="space-y-2 pt-2">
                   <div className="flex justify-between items-center">
-                    <Label className="text-xs text-muted-foreground">CHECK Constraint</Label>
-                    <span className="text-[10px] text-muted-foreground/60 uppercase">Optional</span>
+                    <Label className="text-xs text-muted-foreground">{t("d1.edit.checkConstraint")}</Label>
+                    <span className="text-[10px] text-muted-foreground/60 uppercase">{t("common.optional")}</span>
                   </div>
                   <Input
                     placeholder={`length("${column.name}") < 500`}
@@ -505,10 +518,10 @@ export function EditColumnDialog({
 
         <DialogFooter className="p-4 border-t border-border bg-muted/20 flex justify-end gap-2 shrink-0">
           <Button variant="ghost" size="sm" disabled={isApplying} onClick={() => onOpenChange(false)} className="text-muted-foreground hover:text-foreground h-8 text-xs font-medium">
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button size="sm" disabled={isApplying} onClick={handleReviewChanges} className="bg-emerald-600 hover:bg-emerald-500 text-white h-8 text-xs font-medium px-4">
-            Save <span className="text-emerald-200/50 font-mono ml-1 text-[10px]">⏎</span>
+            {t("common.save")} <span className="text-emerald-200/50 font-mono ml-1 text-[10px]">⏎</span>
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -518,7 +531,7 @@ export function EditColumnDialog({
         <DialogContent className="max-w-xl p-0 gap-0 shadow-2xl overflow-hidden flex flex-col bg-background border-border text-foreground h-[80vh]">
           <DialogHeader className="p-5 pb-4 border-b border-border bg-background shrink-0">
             <DialogTitle className="text-sm font-medium text-foreground/90">
-              Add foreign key relationship to {tableName}
+              {t("d1.edit.fkTitle", { table: tableName })}
             </DialogTitle>
           </DialogHeader>
 
@@ -528,13 +541,13 @@ export function EditColumnDialog({
                 <div className="flex h-5 w-5 items-center justify-center rounded-full border border-muted-foreground/30 text-muted-foreground/60 text-xs font-bold font-serif italic cursor-help">
                   ?
                 </div>
-                <span className="text-sm font-medium text-foreground/90">What are foreign keys?</span>
+                <span className="text-sm font-medium text-foreground/90">{t("d1.edit.whatAreForeignKeys")}</span>
               </div>
               <Expand size={14} className="text-muted-foreground/50" />
             </div>
 
             <div className="space-y-2 pt-2">
-              <Label className="text-xs text-muted-foreground">Select a table to reference to</Label>
+              <Label className="text-xs text-muted-foreground">{t("d1.edit.selectReferenceTable")}</Label>
               <Select value={draftColumn.fkTable} onValueChange={(val) => setDraftColumn({ ...draftColumn, fkTable: val })}>
                 <SelectTrigger className="w-full bg-background border-border h-10 text-sm">
                   <div className="flex items-center gap-2">
@@ -554,7 +567,7 @@ export function EditColumnDialog({
 
             <div className="space-y-4 pt-2">
                <Label className="text-xs text-muted-foreground">
-                 Select columns from <code className="bg-muted px-1 py-0.5 rounded text-foreground/80">public.{tableName}</code> to reference to
+                 {t("d1.edit.selectReferenceColumns", { table: tableName })}
                </Label>
                
                <div className="flex items-center gap-3 w-full">
@@ -590,7 +603,7 @@ export function EditColumnDialog({
                </div>
                
                <Button variant="outline" size="sm" className="h-7 text-xs bg-background border-border text-muted-foreground hover:text-foreground">
-                 Add another column
+                 {t("d1.edit.addAnotherColumn")}
                </Button>
             </div>
 
@@ -601,34 +614,34 @@ export function EditColumnDialog({
                 <div className="flex h-5 w-5 items-center justify-center rounded-full border border-muted-foreground/30 text-muted-foreground/60 text-xs font-bold font-serif italic cursor-help">
                   ?
                 </div>
-                <span className="text-sm font-medium text-foreground/90">Which action is most appropriate?</span>
+                <span className="text-sm font-medium text-foreground/90">{t("d1.edit.whichAction")}</span>
               </div>
               <Expand size={14} className="text-muted-foreground/50" />
             </div>
 
             <div className="space-y-6 pt-2">
               <div className="space-y-2">
-                 <Label className="text-xs text-muted-foreground leading-relaxed">Action if referenced row is updated</Label>
+                 <Label className="text-xs text-muted-foreground leading-relaxed">{t("d1.edit.onUpdate")}</Label>
                  <Select value={draftColumn.fkUpdateAction} onValueChange={(val) => setDraftColumn({ ...draftColumn, fkUpdateAction: val })}>
                    <SelectTrigger className="w-full bg-background border-border h-10 text-sm">
                      <SelectValue />
                    </SelectTrigger>
                    <SelectContent className="bg-background border-border">
-                     {["No action", "Cascade", "Restrict", "Set NULL", "Set default"].map(a => (
-                       <SelectItem key={a} value={a}>{a}</SelectItem>
+                     {fkActions.map(a => (
+                       <SelectItem key={a} value={a}>{fkActionLabel(a)}</SelectItem>
                      ))}
                    </SelectContent>
                  </Select>
                  <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
-                   {draftColumn.fkUpdateAction}: Updating a record from <code className="bg-muted px-1 rounded text-foreground/80 font-mono">public.{tableName}</code> will <span className="text-amber-500 font-medium">raise an error</span> if there are records existing in this table that reference it
+                   {t("d1.edit.fkActionHelpUpdate", { action: fkActionLabel(draftColumn.fkUpdateAction), table: tableName })}
                  </p>
               </div>
 
               <div className="space-y-2">
                  <div className="flex items-center justify-between">
-                   <Label className="text-xs text-muted-foreground leading-relaxed">Action if referenced row is removed</Label>
+                   <Label className="text-xs text-muted-foreground leading-relaxed">{t("d1.edit.onDelete")}</Label>
                    <Button variant="outline" size="sm" className="h-6 text-[10px] bg-background border-border text-foreground/70">
-                     <BookOpen size={10} className="mr-1.5" /> Docs
+                     <BookOpen size={10} className="mr-1.5" /> {t("common.docs")}
                    </Button>
                  </div>
                  <Select value={draftColumn.fkDeleteAction} onValueChange={(val) => setDraftColumn({ ...draftColumn, fkDeleteAction: val })}>
@@ -636,13 +649,13 @@ export function EditColumnDialog({
                      <SelectValue />
                    </SelectTrigger>
                    <SelectContent className="bg-background border-border">
-                     {["No action", "Cascade", "Restrict", "Set NULL", "Set default"].map(a => (
-                       <SelectItem key={a} value={a}>{a}</SelectItem>
+                     {fkActions.map(a => (
+                       <SelectItem key={a} value={a}>{fkActionLabel(a)}</SelectItem>
                      ))}
                    </SelectContent>
                  </Select>
                  <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
-                   {draftColumn.fkDeleteAction}: Deleting a record from <code className="bg-muted px-1 rounded text-foreground/80 font-mono">public.{tableName}</code> will <span className="text-amber-500 font-medium">raise an error</span> if there are records existing in this table that reference it
+                   {t("d1.edit.fkActionHelpDelete", { action: fkActionLabel(draftColumn.fkDeleteAction), table: tableName })}
                  </p>
               </div>
             </div>
@@ -651,7 +664,7 @@ export function EditColumnDialog({
 
           <DialogFooter className="p-4 border-t border-border bg-background flex justify-end gap-2 shrink-0">
             <Button variant="ghost" size="sm" onClick={() => setFkOpen(false)} className="text-muted-foreground hover:text-foreground h-8 text-xs font-medium border border-transparent hover:border-border">
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button size="sm" onClick={() => {
               if (draftColumn.fkTable && draftColumn.fkColumn) {
@@ -670,7 +683,7 @@ export function EditColumnDialog({
               }
               setFkOpen(false);
             }} className="bg-emerald-600 hover:bg-emerald-500 text-white h-8 text-xs font-medium px-4 border-0">
-              Save <span className="text-emerald-200/50 font-mono ml-1 text-[10px]">⏎</span>
+              {t("common.save")} <span className="text-emerald-200/50 font-mono ml-1 text-[10px]">⏎</span>
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -682,9 +695,9 @@ export function EditColumnDialog({
       }}>
         <AlertDialogContent className="max-w-md p-6 overflow-hidden">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-foreground">Review Schema Changes</AlertDialogTitle>
+            <AlertDialogTitle className="text-foreground">{t("d1.edit.reviewTitle")}</AlertDialogTitle>
             <AlertDialogDescription className="text-muted-foreground text-sm leading-relaxed mt-2">
-              You are about to make critical changes to the schema of this column. Please review them below:
+              {t("d1.edit.reviewBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="py-2">
@@ -696,7 +709,7 @@ export function EditColumnDialog({
           </div>
           <AlertDialogFooter className="mt-6 flex gap-2">
             <AlertDialogCancel disabled={isApplying} onClick={() => setConfirmOpen(false)} className="h-8 text-xs font-medium mt-0">
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={isApplying}
@@ -706,7 +719,7 @@ export function EditColumnDialog({
               }}
               className="h-8 text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white border-0 mt-0"
             >
-              {isApplying ? "Applying..." : "Apply Changes"}
+              {isApplying ? t("d1.edit.applying") : t("d1.edit.applyChanges")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

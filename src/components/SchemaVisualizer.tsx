@@ -26,10 +26,12 @@ import { cn } from "@/lib/utils";
 import { parseSQLiteSchemaToGraph, type TableNodeData } from "@/utils/schemaParser";
 import type { D1TableSchema } from "@/hooks/useCloudflare";
 import { useTheme } from "@/components/ThemeProvider";
+import { useI18n } from "@/lib/i18n";
 
 // ── Custom TableNode ──────────────────────────────────────────────────────────
 
 function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
+  const { t } = useI18n();
   const { tableName, columns, primaryKeyColumns } = data;
   const pkSet = new Set(primaryKeyColumns);
 
@@ -124,7 +126,7 @@ function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
 
         {columns.length === 0 && (
           <div className="px-3 py-2 text-[11px] text-muted-foreground/40 italic">
-            No columns
+            {t("d1.schema.noColumns")}
           </div>
         )}
       </div>
@@ -142,6 +144,7 @@ interface SchemaVisualizerProps {
 }
 
 export function SchemaVisualizer({ tables }: SchemaVisualizerProps) {
+  const { t } = useI18n();
   const { resolvedTheme } = useTheme();
 
   // Parse the schema once when tables change
@@ -172,9 +175,9 @@ export function SchemaVisualizer({ tables }: SchemaVisualizerProps) {
           <Share2 size={22} strokeWidth={1.5} />
         </div>
         <div className="space-y-1 max-w-xs">
-          <p className="text-sm font-medium text-foreground">No tables to visualize</p>
+          <p className="text-sm font-medium text-foreground">{t("d1.schema.noTablesVisualize")}</p>
           <p className="text-xs text-muted-foreground">
-            Create tables in your D1 database to see the ER diagram
+            {t("d1.schema.noTablesVisualizeBody")}
           </p>
         </div>
       </div>

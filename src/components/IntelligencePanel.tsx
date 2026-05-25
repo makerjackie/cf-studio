@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle2, Zap, Database, ArrowRight } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { D1AnalysisResult } from "@/hooks/useQueryExecutor";
+import { useI18n } from "@/lib/i18n";
 
 interface IntelligencePanelProps {
   analysis: D1AnalysisResult | null;
@@ -24,6 +25,7 @@ export function IntelligencePanel({
   onApplyFix, 
   onCancelConfirmation 
 }: IntelligencePanelProps) {
+  const { t } = useI18n();
   const isHighCost = analysis?.cost_tier === "High" || analysis?.is_full_scan;
   const isLowCost = analysis?.cost_tier === "Low" && !analysis?.is_full_scan;
   const tableName = analysis?.scanned_tables[0] || previewTableName || "table_name";
@@ -76,7 +78,7 @@ export function IntelligencePanel({
                 "text-[13px] font-semibold tracking-tight",
                 showError || showWarning ? "text-amber-500" : showDestructive || isHighCost ? "text-destructive" : isLowCost ? "text-emerald-500" : "text-sky-500"
               )}>
-                {showError ? "Query Validation" : requiresConfirmation ? "Confirm Destructive Query" : isMutationPreview ? "Destructive Action Detected" : isBlindSelectPreview ? "Blind Operation Detected" : isHighCost ? "High Cost Alert" : isLowCost ? "Query Optimized" : "Query Intelligence"}
+                {showError ? t("d1.intel.validation") : requiresConfirmation ? t("d1.intel.confirmDestructive") : isMutationPreview ? t("d1.intel.destructiveDetected") : isBlindSelectPreview ? t("d1.intel.blindDetected") : isHighCost ? t("d1.intel.highCost") : isLowCost ? t("d1.intel.optimized") : t("d1.intel.intelligence")}
               </span>
               {(!showError) && (
                 <>
@@ -96,17 +98,17 @@ export function IntelligencePanel({
               {showError ? (
                 <span className="text-amber-500/90 font-medium">{validationError}</span>
               ) : requiresConfirmation ? (
-                <>Attention: This query will modify data. <span className="font-bold text-destructive underline decoration-destructive/30 underline-offset-4">Double click the Run button</span> below to execute.</>
+                t("d1.intel.confirmBody")
               ) : isMutationPreview ? (
-                <>Potential <span className="text-destructive font-bold underline decoration-destructive/30 underline-offset-4 decoration-skip-ink">destructive operation</span> detected. You will need to confirm before execution.</>
+                t("d1.intel.mutationBody")
               ) : isBlindSelectPreview ? (
-                <>Attention: This is a <span className="text-amber-500 font-bold underline decoration-amber-500/30 underline-offset-4">blind operation</span> (no filters). Resource usage may be high on large tables.</>
+                t("d1.intel.blindBody")
               ) : isHighCost ? (
-                <>This query performs a <span className="text-destructive/90 font-bold underline decoration-destructive/30 underline-offset-4">full table scan</span>. Consider adding an index.</>
+                t("d1.intel.highCostBody")
               ) : isLowCost ? (
-                "The query is optimal and efficiently utilizes existing database indexes."
+                t("d1.intel.optimizedBody")
               ) : (
-                "Cost analysis is complete. Your query performance is within acceptable limits."
+                t("d1.intel.defaultBody")
               )}
             </p>
           </div>
@@ -120,7 +122,7 @@ export function IntelligencePanel({
               onClick={onCancelConfirmation}
               className="h-8 text-[11px] font-medium text-muted-foreground hover:text-foreground"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
           )}
           {isHighCost && !requiresConfirmation && (
@@ -131,7 +133,7 @@ export function IntelligencePanel({
               className="h-8 gap-2 text-[11px] font-bold border-destructive/20 hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-all group shrink-0"
             >
               <Zap size={12} className="text-amber-500 fill-amber-500 group-hover:scale-125 transition-transform" />
-              Create Index
+              {t("d1.intel.createIndex")}
               <ArrowRight size={12} className="opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
             </Button>
           )}

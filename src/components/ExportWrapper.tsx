@@ -1,6 +1,7 @@
 import { Suspense, lazy, type ComponentType } from 'react';
 import { FreeExportDialog, type ExportDialogProps } from './FreeExportDialog';
 import { Loader2 } from 'lucide-react';
+import { useI18n } from '@/lib/i18n';
 
 const globModules = import.meta.glob('../pro_modules/frontend/ProFeatureGate.tsx');
 const ProDialogImport = Object.values(globModules)[0] as (() => Promise<any>) | undefined;
@@ -10,13 +11,14 @@ const ProModule: ComponentType<ExportDialogProps> | null = ProDialogImport
   : null;
 
 export function ExportWrapper(props: ExportDialogProps) {
+  const { t } = useI18n();
   if (ProModule) {
     return (
       <Suspense
         fallback={
           <div className="flex items-center justify-center p-4 text-sm text-foreground">
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            Loading...
+            {t("d1.export.loading")}
           </div>
         }
       >

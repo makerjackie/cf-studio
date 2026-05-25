@@ -61,11 +61,11 @@ interface NavItem {
 const THEME_OPTIONS: {
   value: Theme;
   icon: React.ElementType;
-  label: string;
+  labelKey: "theme.light" | "theme.dark" | "theme.system";
 }[] = [
-  { value: "light", icon: Sun, label: "Light" },
-  { value: "dark", icon: Moon, label: "Dark" },
-  { value: "system", icon: Monitor, label: "System" },
+  { value: "light", icon: Sun, labelKey: "theme.light" },
+  { value: "dark", icon: Moon, labelKey: "theme.dark" },
+  { value: "system", icon: Monitor, labelKey: "theme.system" },
 ];
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
@@ -86,6 +86,7 @@ function Sidebar({
   activeAccount,
   navGroups,
 }: SidebarProps) {
+  const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const privacySettings = useAppStore(s => s.privacySettings);
 
@@ -201,14 +202,14 @@ function Sidebar({
       {!collapsed && (
         <div className="px-1.5 py-2 border-t border-sidebar-border shrink-0">
           <p className="px-2 text-[10px] uppercase tracking-widest text-sidebar-foreground/30 mb-1">
-            Appearance
+            {t("common.appearance")}
           </p>
           <div className="flex gap-1">
-            {THEME_OPTIONS.map(({ value, icon: Icon, label }) => (
+            {THEME_OPTIONS.map(({ value, icon: Icon, labelKey }) => (
               <button
                 key={value}
                 onClick={() => setTheme(value)}
-                title={label}
+                title={t(labelKey)}
                 className={cn(
                   "flex-1 flex items-center justify-center py-1.5 rounded-md transition-colors",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -239,6 +240,7 @@ interface TitleBarProps {
 }
 
 function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
+  const { t } = useI18n();
   const { status, downloadProgress, update } = useUpdater();
 
   return (
@@ -260,7 +262,7 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
           "text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-all",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-label={collapsed ? t("title.expandSidebar") : t("title.collapseSidebar")}
       >
         {collapsed ? (
           <PanelLeftOpen size={16} strokeWidth={2} />
@@ -316,14 +318,14 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
             className="flex items-center gap-1.5 px-3 py-1 bg-primary text-primary-foreground rounded-full text-[10px] font-bold shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all animate-bounce"
           >
             <DownloadIcon size={12} strokeWidth={3} />
-            UPDATE V{update?.version}
+            {t("title.updateAvailable", { version: update?.version ?? "" })}
           </button>
         )}
 
         {status === "error" && (
           <Badge variant="destructive" className="flex items-center gap-1 text-[10px] py-0.5 px-2">
             <AlertCircle size={10} />
-            Update Error
+            {t("title.updateError")}
           </Badge>
         )}
 
@@ -342,10 +344,30 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
 }
 
 // ── Simple page router ────────────────────────────────────────────────────────
+function KVNamespacesView() {
+  const { t } = useI18n();
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="max-w-md rounded-lg border border-border bg-muted/20 p-6 text-center">
+        <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-background text-primary">
+          <KeyRound size={20} strokeWidth={1.75} />
+        </div>
+        <Badge variant="secondary" className="mb-3">
+          {t("kv.badge")}
+        </Badge>
+        <h1 className="text-base font-semibold text-foreground">{t("kv.title")}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t("kv.subtitle")}</p>
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground/70">{t("kv.body")}</p>
+      </div>
+    </div>
+  );
+}
+
 function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (id: string) => void }) {
   const { t } = useI18n();
   if (activeId === "d1") return <DatabasesView />;
   if (activeId === "r2") return <R2BucketsView />;
+  if (activeId === "kv") return <KVNamespacesView />;
   if (activeId === "settings") return <SettingsView />;
   if (activeId === "audit") return <Overview onNavigate={onNavigate} />;
   if (activeId === "audit-scanner") return <DomainScanner onNavigate={onNavigate} />;
@@ -362,7 +384,6 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
     );
   }
 
-  // KV and Settings views will be added in subsequent steps
   return (
       <div className="flex flex-col items-center justify-center h-full text-center gap-2">
       <p className="text-muted-foreground text-sm">{t("common.comingSoon")}</p>
@@ -392,7 +413,6 @@ export function Layout() {
             id: "kv",
             label: t("nav.kv"),
             icon: KeyRound,
-            disabled: true,
             badge: t("common.soon"),
           },
         ],

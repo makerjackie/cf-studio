@@ -21,6 +21,7 @@
 import React from "react";
 import { useRemoteConfig } from "@/pro_modules/frontend/useRemoteConfig";
 import { useToast } from "@/components/ui/use-toast";
+import { useI18n } from "@/lib/i18n";
 
 // ── Config key resolver ────────────────────────────────────────────────────────
 
@@ -70,14 +71,6 @@ function resolveFeature(featureName: string, config: RemoteConfig | null, isLoad
   }
 }
 
-const FEATURE_LABELS: Record<string, string> = {
-  r2_upload: "File Upload",
-  r2_download: "File Download",
-  r2_create_bucket: "Create Bucket",
-  r2_delete_bucket: "Delete Bucket",
-  r2_bucket_settings: "Bucket Settings",
-};
-
 // ── Imperative hook ────────────────────────────────────────────────────────────
 
 /**
@@ -86,9 +79,17 @@ const FEATURE_LABELS: Record<string, string> = {
  * children in a JSX component isn't ergonomic.
  */
 export function useProFeature(featureName: string) {
+  const { t } = useI18n();
   const { data, isLoading } = useRemoteConfig();
   const { toast } = useToast();
-  const label = FEATURE_LABELS[featureName] ?? featureName;
+  const labels: Record<string, string> = {
+    r2_upload: t("r2.feature.upload"),
+    r2_download: t("r2.feature.download"),
+    r2_create_bucket: t("r2.feature.createBucket"),
+    r2_delete_bucket: t("r2.feature.deleteBucket"),
+    r2_bucket_settings: t("r2.feature.bucketSettings"),
+  };
+  const label = labels[featureName] ?? featureName;
   const isAvailable = resolveFeature(featureName, data, isLoading);
 
   return {
@@ -96,8 +97,8 @@ export function useProFeature(featureName: string) {
     isLoading,
     showProToast: () =>
       toast({
-        title: `🔒 Pro Feature — ${label}`,
-        description: "This feature is available in the official CF Studio Pro build.",
+        title: t("r2.proToastTitle", { label }),
+        description: t("r2.proToastBody"),
         duration: 4000,
       }),
   };
@@ -118,6 +119,7 @@ interface R2ProGateProps {
 
 export function R2ProGate({ featureName, children, inline = false }: R2ProGateProps) {
   const { isAvailable, isLoading, showProToast } = useProFeature(featureName);
+  const { t } = useI18n();
 
   // While loading: render children normally (optimistic)
   if (isLoading || isAvailable) {
@@ -136,9 +138,9 @@ export function R2ProGate({ featureName, children, inline = false }: R2ProGatePr
         <span className="pointer-events-none opacity-60">{children}</span>
         <span
           className="absolute -top-1.5 -right-2.5 bg-orange-500 text-[8px] font-bold px-1 rounded-[4px] text-white shadow-sm z-10 pointer-events-none select-none"
-          aria-label="Pro feature"
+          aria-label={t("d1.export.proTitle")}
         >
-          PRO
+          {t("common.pro")}
         </span>
       </span>
     );
@@ -149,9 +151,9 @@ export function R2ProGate({ featureName, children, inline = false }: R2ProGatePr
       <div className="pointer-events-none opacity-60">{children}</div>
       <span
         className="absolute -top-1.5 -right-2.5 bg-orange-500 text-[8px] font-bold px-1 rounded-[4px] text-white shadow-sm z-10 pointer-events-none select-none"
-        aria-label="Pro feature"
+        aria-label={t("d1.export.proTitle")}
       >
-        PRO
+        {t("common.pro")}
       </span>
       {/* Invisible click-interceptor overlay */}
       <span className="absolute inset-0 cursor-not-allowed" aria-hidden />

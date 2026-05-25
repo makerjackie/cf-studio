@@ -49,6 +49,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 import {
   useD1Schema,
   useD1TableData,
@@ -132,6 +133,7 @@ function TableListSkeleton() {
 // ── Schema tab content ────────────────────────────────────────────────────────
 
 function SchemaTab({ table }: { table: D1TableSchema }) {
+  const { t } = useI18n();
   const privacySettings = useAppStore(s => s.privacySettings);
   const blurTable = privacySettings.enabled && privacySettings.tableNames;
 
@@ -139,8 +141,8 @@ function SchemaTab({ table }: { table: D1TableSchema }) {
     return (
       <PanelMessage
         icon={AlertCircle}
-        title="No schema available"
-        body={`${table.name} has no recorded CREATE TABLE statement`}
+        title={t("d1.noSchema")}
+        body={t("d1.noSchemaBody", { table: table.name })}
       />
     );
   }
@@ -191,6 +193,7 @@ interface DataTabProps {
 }
 
 function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) {
+  const { t } = useI18n();
   const privacySettings = useAppStore(s => s.privacySettings);
   const blurTable = privacySettings.enabled && privacySettings.tableNames;
   const [offset, setOffset] = useState(0);
@@ -276,11 +279,11 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                       variant="secondary" 
                       className="h-5 px-1.5 text-[10px] font-mono bg-muted/40 hover:bg-muted/60 transition-colors cursor-help border-transparent"
                     >
-                      {table.columnsCount ?? 0} {table.columnsCount === 1 ? "col" : "cols"}
+                      {table.columnsCount ?? 0} {t((table.columnsCount ?? 0) === 1 ? "d1.colShort" : "d1.colsShort")}
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-[11px] px-2 py-1 shadow-md border-border/80 bg-background/95 backdrop-blur-sm">
-                    Total {table.columnsCount ?? 0} columns exist in {table.name}
+                    {t("d1.totalColumnsTooltip", { count: table.columnsCount ?? 0, table: table.name })}
                   </TooltipContent>
                 </Tooltip>
 
@@ -290,11 +293,11 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                       variant="secondary" 
                       className="h-5 px-1.5 text-[10px] font-mono bg-primary/10 hover:bg-primary/20 text-primary border-primary/20 transition-colors cursor-help"
                     >
-                      {state.data.rows.length} row{state.data.rows.length !== 1 ? "s" : ""}
+                      {t(state.data.rows.length === 1 ? "common.rowsSingular" : "common.rows", { count: state.data.rows.length })}
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="text-[11px] px-2 py-1 shadow-md border-border/80 bg-background/95 backdrop-blur-sm">
-                    {state.data.rows.length} rows fetched
+                    {t("d1.rowsFetchedTooltip", { count: state.data.rows.length })}
                   </TooltipContent>
                 </Tooltip>
               </div>
@@ -310,8 +313,8 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
           >
             <Download size={11} />
             {selectedRowIndices.length === 0 || (state.status === "success" && selectedRowIndices.length === state.data.rows.length)
-              ? "Export All"
-              : `Export ${selectedRowIndices.length} Rows`}
+              ? t("d1.exportAll")
+              : t("d1.exportRows", { count: selectedRowIndices.length })}
           </Button>
         </div>
       </div>
@@ -325,7 +328,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
         {state.status === "error" && (
           <PanelMessage
             icon={AlertCircle}
-            title="Query failed"
+            title={t("d1.queryFailed")}
             body={state.message}
             iconColor="text-destructive"
           />
@@ -334,8 +337,8 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
         {state.status === "success" && state.data.rows.length === 0 && (
           <PanelMessage
             icon={Sheet}
-            title="No rows found"
-            body={`${table.name} is empty or has no data matching the current offset`}
+            title={t("d1.noRows")}
+            body={t("d1.noRowsBody", { table: table.name })}
           />
         )}
 
@@ -362,7 +365,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                           setSelectedRowIndices([]);
                         }
                       }}
-                      aria-label="Select all rows"
+                      aria-label={t("common.selectAllRows")}
                     />
                   </TableHead>
                   {/* Row number gutter */}
@@ -406,7 +409,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                                           onPointerDown={(e) => e.stopPropagation()}
                                           onClick={(e) => e.stopPropagation()}
                                         >
-                                          <p className="text-muted-foreground uppercase tracking-widest text-[10px] font-sans">Primary Key</p>
+                                          <p className="text-muted-foreground uppercase tracking-widest text-[10px] font-sans">{t("d1.primaryKey")}</p>
                                         </TooltipContent>
                                       </Tooltip>
                                     </TooltipProvider>
@@ -432,7 +435,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                                           onClick={(e) => e.stopPropagation()}
                                         >
                                           <div className="flex flex-col gap-1.5 py-0.5">
-                                            {outFks.length > 0 && <p className="text-muted-foreground uppercase tracking-widest text-[10px] font-sans pb-0.5 border-b border-border/50">References</p>}
+                                            {outFks.length > 0 && <p className="text-muted-foreground uppercase tracking-widest text-[10px] font-sans pb-0.5 border-b border-border/50">{t("d1.references")}</p>}
                                             {outFks.map((fk, idx) => (
                                               <div key={`out-${idx}`} className="flex items-center gap-2">
                                                 <span className="text-muted-foreground">{table.name}.{col.name}</span>
@@ -445,7 +448,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                                                 </button>
                                               </div>
                                             ))}
-                                            {inFks.length > 0 && <p className="text-muted-foreground uppercase tracking-widest text-[10px] font-sans pb-0.5 border-b border-border/50">Referenced By</p>}
+                                            {inFks.length > 0 && <p className="text-muted-foreground uppercase tracking-widest text-[10px] font-sans pb-0.5 border-b border-border/50">{t("d1.referencedBy")}</p>}
                                             {inFks.map((fk, idx) => (
                                               <div key={`in-${idx}`} className="flex items-center gap-2">
                                                 <button 
@@ -471,21 +474,21 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-44 font-mono text-[11px] shadow-lg border-border/60">
                           <DropdownMenuItem className="gap-2 cursor-pointer text-muted-foreground focus:text-foreground" onClick={() => { setSortCol(col.name); setSortAsc(true); setOffset(0); }}>
-                            <ArrowUp size={13} strokeWidth={1.5} /> Sort Ascending
+                            <ArrowUp size={13} strokeWidth={1.5} /> {t("d1.sortAscending")}
                           </DropdownMenuItem>
                           <DropdownMenuItem className="gap-2 cursor-pointer text-muted-foreground focus:text-foreground" onClick={() => { setSortCol(col.name); setSortAsc(false); setOffset(0); }}>
-                            <ArrowDown size={13} strokeWidth={1.5} /> Sort Descending
+                            <ArrowDown size={13} strokeWidth={1.5} /> {t("d1.sortDescending")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="gap-2 cursor-pointer text-muted-foreground focus:text-foreground" onClick={() => navigator.clipboard.writeText(col.name)}>
-                            <Copy size={13} strokeWidth={1.5} /> Copy name
+                            <Copy size={13} strokeWidth={1.5} /> {t("d1.copyName")}
                           </DropdownMenuItem>
                           <DropdownMenuItem className="gap-2 cursor-pointer text-muted-foreground focus:text-foreground" onClick={() => setEditingColumn(col)}>
-                            <Edit size={13} strokeWidth={1.5} /> Edit column
+                            <Edit size={13} strokeWidth={1.5} /> {t("d1.editColumn")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="gap-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10">
-                            <Trash2 size={13} strokeWidth={1.5} /> Delete column
+                            <Trash2 size={13} strokeWidth={1.5} /> {t("d1.deleteColumn")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -510,7 +513,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                             return prev.filter((i) => i !== ri);
                           });
                         }}
-                        aria-label={`Select row ${ri + 1}`}
+                        aria-label={t("common.selectRow", { row: ri + 1 })}
                       />
                     </TableCell>
                     {/* Row number */}
@@ -528,9 +531,9 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                           title={isNull ? "NULL" : String(val)}
                         >
                           {isNull ? (
-                            <span className="text-muted-foreground/30 italic text-xs uppercase">NULL</span>
+                            <span className="text-muted-foreground/30 italic text-xs uppercase">{t("common.null")}</span>
                           ) : isEmpty ? (
-                            <span className="text-muted-foreground/30 italic text-xs uppercase">EMPTY</span>
+                            <span className="text-muted-foreground/30 italic text-xs uppercase">{t("common.empty")}</span>
                           ) : (
                             <span className="text-foreground/90">{String(val)}</span>
                           )}
@@ -577,16 +580,16 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
           <div className="flex items-center gap-4">
             <span className="text-xs text-muted-foreground/50 tabular-nums">
               {state.status === "success"
-                ? `Rows ${offset + 1}–${offset + (state.data?.totalFetched ?? 0)}`
-                : "Loading…"}
+                ? t("d1.rowsRange", { start: offset + 1, end: offset + (state.data?.totalFetched ?? 0) })
+                : t("common.loading")}
             </span>
 
             <div className="flex items-center gap-1.5 h-4 ml-2 pl-4 border-l border-border/50">
-              <span className="text-[10px] text-muted-foreground/30 uppercase tracking-tight font-sans">Per page</span>
+              <span className="text-[10px] text-muted-foreground/30 uppercase tracking-tight font-sans">{t("d1.perPage")}</span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs font-mono text-muted-foreground hover:text-foreground hover:bg-muted/50 gap-1">
-                    {pageSize >= 1000000 ? "All" : pageSize}
+                    {pageSize >= 1000000 ? t("common.all") : pageSize}
                     <ChevronDown size={10} className="opacity-50" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -604,14 +607,14 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                     className={cn("cursor-pointer", pageSize >= 1000000 && "bg-accent text-accent-foreground")}
                     onClick={() => { setPageSize(1000000); setOffset(0); }}
                   >
-                    All
+                    {t("common.all")}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem 
                     className="cursor-pointer gap-2"
                     onClick={() => setIsCustomLimitOpen(true)}
                   >
-                    <Edit size={11} className="opacity-50" /> Custom...
+                    <Edit size={11} className="opacity-50" /> {t("common.custom")}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -619,14 +622,14 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground/40">Page {page}</span>
+            <span className="text-xs text-muted-foreground/40">{t("common.page", { page })}</span>
             <div className="flex items-center gap-1">
               <Button
                 variant="outline" size="icon"
                 className="h-6 w-6"
                 disabled={!hasPrev}
                 onClick={() => setOffset(Math.max(0, offset - pageSize))}
-                aria-label="Previous page"
+                aria-label={t("common.previousPage")}
               >
                 <ChevronLeft size={12} />
               </Button>
@@ -635,7 +638,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                 className="h-6 w-6"
                 disabled={!hasNext}
                 onClick={() => setOffset(offset + pageSize)}
-                aria-label="Next page"
+                aria-label={t("common.nextPage")}
               >
                 <ChevronRightIcon size={12} />
               </Button>
@@ -647,10 +650,10 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
       {/* Custom page size dialog */}
       <Dialog open={isCustomLimitOpen} onOpenChange={setIsCustomLimitOpen}>
         <DialogContent className="sm:max-w-[300px] border-border/60 shadow-2xl">
-          <DialogTitle className="text-sm font-semibold">Custom Rows Per Page</DialogTitle>
+          <DialogTitle className="text-sm font-semibold">{t("d1.customRowsPerPage")}</DialogTitle>
           <div className="py-2 space-y-3">
             <div className="space-y-1.5">
-              <label className="text-[10px] uppercase font-sans tracking-widest text-muted-foreground/60">Limit (max 10000)</label>
+              <label className="text-[10px] uppercase font-sans tracking-widest text-muted-foreground/60">{t("d1.limitMax")}</label>
               <div className="relative">
                 <input
                   type="number"
@@ -686,7 +689,7 @@ function DataTab({ databaseId, table, allTables, onTableSelect }: DataTabProps) 
                 }
               }}
             >
-              Apply Limit
+              {t("d1.applyLimit")}
             </Button>
           </div>
         </DialogContent>
@@ -704,6 +707,7 @@ function TableListItem({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useI18n();
   const privacySettings = useAppStore((s) => s.privacySettings);
   const showTableColumnCounts = useAppStore((s) => s.showTableColumnCounts);
   const blurTable = privacySettings.enabled && privacySettings.tableNames;
@@ -732,7 +736,7 @@ function TableListItem({
           variant="secondary" 
           className="px-1.5 py-0 h-4 text-[9px] font-mono shrink-0 bg-muted/40 text-muted-foreground/40 group-hover:bg-muted group-hover:text-muted-foreground transition-colors"
         >
-          {table.columnsCount} {table.columnsCount === 1 ? "col" : "cols"}
+          {table.columnsCount} {t(table.columnsCount === 1 ? "d1.colShort" : "d1.colsShort")}
         </Badge>
       )}
       {active && <ChevronRight size={12} className="text-primary shrink-0" />}
@@ -748,6 +752,7 @@ interface DatabaseExplorerProps {
 }
 
 export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
+  const { t } = useI18n();
   const [selectedTable, setSelectedTable] = useState<D1TableSchema | null>(null);
   const [systemOpen, setSystemOpen] = useState(false);
   const [isVisualSchemaOpen, setIsVisualSchemaOpen] = useState(false);
@@ -793,7 +798,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
           className="gap-1.5 text-muted-foreground hover:text-foreground -ml-2"
         >
           <ArrowLeft size={14} strokeWidth={2} />
-          Databases
+          {t("d1.back")}
         </Button>
 
         <Separator orientation="vertical" className="h-4" />
@@ -812,7 +817,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
             onClick={() => setIsQueryEditorOpen(true)}
           >
             <Terminal size={11} strokeWidth={2.5} />
-            SQL Editor
+            {t("d1.sqlEditor")}
           </Badge>
           <Badge 
             variant="outline" 
@@ -820,7 +825,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
             onClick={() => setIsVisualSchemaOpen(true)}
           >
             <Network size={11} strokeWidth={2.5} />
-            Visual Schema
+            {t("d1.visualSchema")}
           </Badge>
           <Badge 
             variant="outline" 
@@ -834,10 +839,10 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
             }}
           >
             <Layers size={11} strokeWidth={2.5} />
-            Indexes
+            {t("d1.indexes")}
             {configData?.enable_d1_index_management === false && (
               <Badge variant="secondary" className="ml-1 px-1 py-0 h-3.5 text-[8px] bg-primary/10 text-primary border-transparent">
-                PRO
+                {t("common.pro")}
               </Badge>
             )}
           </Badge>
@@ -846,7 +851,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
         <Button
           variant="ghost" size="icon" onClick={refresh} disabled={isLoading}
           className="ml-auto text-muted-foreground hover:text-foreground"
-          aria-label="Refresh schema"
+          aria-label={t("d1.refreshSchema")}
         >
           <RefreshCw size={13} className={cn(isLoading && "animate-spin")} />
         </Button>
@@ -859,7 +864,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
         <div className="w-[200px] shrink-0 border-r border-border flex flex-col bg-muted/20">
           <div className="flex items-center justify-between px-3 py-2 border-b border-border shrink-0">
             <span className="text-[10px] uppercase tracking-widest text-muted-foreground/50 font-medium">
-              Tables
+              {t("d1.tables")}
             </span>
             {state.status === "success" && (
               <span className="text-[10px] text-muted-foreground/40">{userTables.length}</span>
@@ -877,7 +882,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
               )}
 
               {state.status === "success" && userTables.length === 0 && sysTables.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-6 px-2">No tables found</p>
+                <p className="text-xs text-muted-foreground text-center py-6 px-2">{t("d1.noTables")}</p>
               )}
 
               {/* User tables */}
@@ -906,7 +911,7 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
                       strokeWidth={2}
                       className={cn("transition-transform", systemOpen && "rotate-90")}
                     />
-                    System ({sysTables.length})
+                    {t("d1.systemTables", { count: sysTables.length })}
                   </button>
                   {systemOpen && sysTables.map((table) => (
                     <TableListItem
@@ -928,8 +933,8 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
             <div className="border-b border-border px-3 pt-2 pb-0 shrink-0 bg-muted/10">
               <TabsList className="h-8 bg-transparent p-0 gap-0">
                 {([
-                  { value: "data",   Icon: Sheet,    label: "Data"         },
-                  { value: "schema", Icon: Code2,    label: "Schema"       },
+                  { value: "data",   Icon: Sheet,    label: t("d1.tab.data") },
+                  { value: "schema", Icon: Code2,    label: t("d1.tab.schema") },
                 ] as const).map(({ value, Icon, label }) => (
                   <TabsTrigger
                     key={value}
@@ -960,14 +965,14 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
                       if (t) setSelectedTable(t);
                     }}
                   />
-                : <PanelMessage icon={Sheet} title="Select a table" body="Click a table name on the left to browse its rows" />}
+                : <PanelMessage icon={Sheet} title={t("d1.selectTable")} body={t("d1.selectTableRows")} />}
             </TabsContent>
 
             {/* Schema — requires a selected table */}
             <TabsContent value="schema" className="flex-1 min-h-0 mt-0 data-[state=active]:flex data-[state=active]:flex-col">
               {selectedTable
                 ? <SchemaTab table={selectedTable} />
-                : <PanelMessage icon={BookOpen} title="Select a table" body="Click a table name on the left to view its CREATE TABLE statement" />}
+                : <PanelMessage icon={BookOpen} title={t("d1.selectTable")} body={t("d1.selectTableSchema")} />}
             </TabsContent>
           </Tabs>
         </div>
@@ -975,10 +980,10 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
 
       <Dialog open={isVisualSchemaOpen} onOpenChange={setIsVisualSchemaOpen}>
         <DialogContent className="max-w-[95vw] w-full h-[95vh] p-0 overflow-hidden flex flex-col gap-0 border-border bg-background shadow-2xl">
-          <DialogTitle className="sr-only">Visual Schema</DialogTitle>
+          <DialogTitle className="sr-only">{t("d1.visualSchema")}</DialogTitle>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/10 shrink-0">
             <Network size={16} className="text-primary" />
-            <span className="font-semibold text-sm">Visual Schema — <span className={cn(blurDb && "blur-[4px] hover:blur-none transition-all duration-200 select-none hover:select-auto cursor-default")}>{database.name}</span></span>
+            <span className="font-semibold text-sm">{t("d1.visualSchema")} — <span className={cn(blurDb && "blur-[4px] hover:blur-none transition-all duration-200 select-none hover:select-auto cursor-default")}>{database.name}</span></span>
           </div>
           <div className="flex-1 min-h-0 relative">
             <SchemaVisualizer tables={tables} />
@@ -988,10 +993,10 @@ export function DatabaseExplorer({ database, onBack }: DatabaseExplorerProps) {
 
       <Dialog open={isQueryEditorOpen} onOpenChange={setIsQueryEditorOpen}>
         <DialogContent className="max-w-[95vw] w-full h-[95vh] p-0 overflow-hidden flex flex-col gap-0 border-border bg-background shadow-2xl">
-          <DialogTitle className="sr-only">SQL Editor</DialogTitle>
+          <DialogTitle className="sr-only">{t("d1.sqlEditor")}</DialogTitle>
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/10 shrink-0">
             <Terminal size={16} className="text-primary" />
-            <span className="font-semibold text-sm">SQL Editor — <span className={cn(blurDb && "blur-[4px] hover:blur-none transition-all duration-200 select-none hover:select-auto cursor-default")}>{database.name}</span></span>
+            <span className="font-semibold text-sm">{t("d1.sqlEditor")} — <span className={cn(blurDb && "blur-[4px] hover:blur-none transition-all duration-200 select-none hover:select-auto cursor-default")}>{database.name}</span></span>
           </div>
           <div className="flex-1 min-h-0 relative flex flex-col">
             <QueryEditor databaseId={database.uuid} tables={allTables} />

@@ -23,6 +23,7 @@ import { DatabaseExplorer } from "@/components/DatabaseExplorer";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useToast } from "@/components/ui/use-toast";
 import { ProFeatureGate } from "@/pro_modules/frontend/ProFeatureGate";
+import { useI18n } from "@/lib/i18n";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -79,12 +80,13 @@ interface EmptyStateProps {
 
 function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps) {
   const { toast } = useToast();
+  const { t } = useI18n();
   const handleCopyCommand = async () => {
     try {
       await navigator.clipboard.writeText("npx wrangler login");
       toast({
-        title: "Copied",
-        description: "Login command copied to clipboard.",
+        title: t("common.copied"),
+        description: t("d1.toast.loginCopied"),
       });
     } catch (e) {
       console.error(e);
@@ -93,14 +95,14 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
 
   const handleRunCommand = async () => {
     toast({
-      title: "Opening Terminal",
-      description: "Launching wrangler login in a new terminal window...",
+      title: t("d1.empty.openingTerminal"),
+      description: t("d1.empty.openingTerminalDesc"),
     });
     try {
       await invokeCloudflare("run_wrangler_login");
     } catch (e) {
       toast({
-        title: "Launch Failed",
+        title: t("d1.empty.launchFailed"),
         description: String(e),
         variant: "destructive",
       });
@@ -112,21 +114,19 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
     "no-auth": {
       icon: Terminal,
       iconColor: "text-amber-400",
-      title: "Wrangler session not found",
+      title: t("d1.empty.noAuthTitle"),
       body: (
         <>
-          CF Studio reads your local Wrangler session for zero-touch auth.
-          Run the command below in your terminal or click the button below. 
-          The page will automatically refresh once you are logged in.
+          {t("d1.empty.noAuthBody")}
           <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-border bg-muted/60 px-3 py-2 font-mono text-sm text-foreground">
             <span className="select-text">npx wrangler login</span>
-            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyCommand} title="Copy command">
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyCommand} title={t("d1.empty.copyCommand")}>
               <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
             </Button>
           </div>
           <Button variant="secondary" size="sm" className="w-full mt-3" onClick={handleRunCommand}>
             <Terminal size={14} className="mr-2" />
-            Run Command in Background
+            {t("d1.empty.runCommand")}
           </Button>
           {message && (
             <p className="mt-3 text-xs text-destructive/80 select-text break-all">
@@ -139,10 +139,10 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
     "no-databases": {
       icon: Database,
       iconColor: "text-muted-foreground",
-      title: "No D1 databases found",
+      title: t("d1.empty.noDatabasesTitle"),
       body: (
         <>
-          This Cloudflare account has no D1 databases yet. Create one with:
+          {t("d1.empty.noDatabasesBody")}
           <div className="mt-3 flex items-center gap-2 rounded-md border border-border bg-muted/60 px-3 py-2 font-mono text-sm text-foreground">
             <span className="select-text">wrangler d1 create my-database</span>
           </div>
@@ -152,10 +152,10 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
     "not-enabled": {
       icon: Database,
       iconColor: "text-blue-500",
-      title: "Cloudflare D1 Not Enabled",
+      title: t("d1.empty.notEnabledTitle"),
       body: (
         <>
-          It looks like Cloudflare D1 Serverless SQL is not yet enabled for this account. You must enable it in the dashboard before creating databases.
+          {t("d1.empty.notEnabledBody")}
           <div className="mt-5 flex items-center justify-center">
             <Button
               onClick={() => {
@@ -163,7 +163,7 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
               }}
               size="sm"
             >
-              Enable D1 SQL
+              {t("d1.empty.enableD1")}
             </Button>
           </div>
         </>
@@ -172,10 +172,10 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
     "api-error": {
       icon: AlertCircle,
       iconColor: "text-destructive",
-      title: "Failed to load databases",
+      title: t("d1.empty.apiErrorTitle"),
       body: (
         <p className="text-sm text-muted-foreground select-text break-all">
-          {message ?? "An unknown API error occurred."}
+          {message ?? t("d1.empty.unknownApiError")}
         </p>
       ),
     },
@@ -194,7 +194,7 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
       </div>
       <Button variant="outline" size="sm" onClick={onRefresh} className="gap-1.5 mt-1">
         <RefreshCw size={13} strokeWidth={2} />
-        Refresh
+        {t("common.refresh")}
       </Button>
     </div>
   );
@@ -278,6 +278,7 @@ interface DatabaseListProps {
 }
 
 function DatabaseList({ onSelect }: DatabaseListProps) {
+  const { t } = useI18n();
   const { state, refresh } = useD1Databases();
   const activeAccount = useAppStore((s) => s.activeAccount);
   const enableD1History = useAppStore((s) => s.enableD1History);
@@ -298,9 +299,9 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
       {/* Header */}
       <div className="flex items-center justify-between gap-4 shrink-0">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">Databases</h1>
+          <h1 className="text-lg font-semibold tracking-tight text-foreground">{t("d1.title")}</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            D1 databases attached to your Cloudflare account
+            {t("d1.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-1.5">
@@ -316,8 +317,8 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
 
                   if (!hasProHistory) {
                       toast({
-                        title: "History Feature Required",
-                        description: "This feature is only available in the official CF Studio Pro version.",
+                        title: t("d1.historyRequired"),
+                        description: t("d1.historyRequiredDesc"),
                         variant: "destructive",
                       });
                       return;
@@ -327,7 +328,7 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
                   const historyUrl = `index.html?theme=${encodeURIComponent(storedTheme)}`;
                   const webview = new WebviewWindow("history", {
                       url: historyUrl,
-                      title: "Query History Dashboard",
+                      title: t("d1.queryHistory"),
                       width: 1200,
                       height: 800,
                       minWidth: 600,
@@ -350,14 +351,14 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
                      });
                   });
               }}
-              title={enableD1History && hasProHistory ? "Query History" : "Query History (Pro)"}
+              title={enableD1History && hasProHistory ? t("d1.queryHistory") : t("d1.queryHistoryPro")}
               className="text-muted-foreground hover:text-foreground"
             >
               <History size={15} strokeWidth={2} />
             </Button>
             {(!enableD1History || !hasProHistory) && (
               <span className="absolute -top-1 -right-1 px-1 bg-amber-500 text-[8px] font-bold text-white rounded-sm pointer-events-none scale-75 uppercase">
-                Pro
+                {t("common.pro")}
               </span>
             )}
           </div>
@@ -366,7 +367,7 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
             size="icon"
             onClick={refresh}
             disabled={isLoading}
-            aria-label="Refresh databases"
+            aria-label={t("common.refresh")}
             className="text-muted-foreground hover:text-foreground"
           >
             <RefreshCw size={14} strokeWidth={2} className={cn(isLoading && "animate-spin")} />
@@ -410,7 +411,7 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/30 hover:bg-muted/30">
-                  {["Name", "Database ID", "Created At", "Tables", "Size", ""].map((h) => (
+                  {[t("d1.table.name"), t("d1.table.id"), t("d1.table.createdAt"), t("d1.table.tables"), t("d1.table.size"), ""].map((h) => (
                     <TableHead
                       key={h}
                       className="text-xs font-medium uppercase tracking-wider text-muted-foreground py-2.5"
@@ -430,7 +431,7 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
             <div className="flex items-center gap-1.5 border-t border-border bg-muted/20 px-4 py-2">
               <Loader2 size={11} className="text-muted-foreground/40 hidden" />
               <span className="text-xs text-muted-foreground/60">
-                {state.data.length} database{state.data.length !== 1 ? "s" : ""} — click a row to explore
+                {t(state.data.length === 1 ? "d1.listFooterSingular" : "d1.listFooter", { count: state.data.length })}
               </span>
             </div>
           </div>

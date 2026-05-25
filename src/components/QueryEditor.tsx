@@ -28,6 +28,7 @@ import { type D1QueryResult, type D1TableSchema } from "@/hooks/useCloudflare";
 import { useAppStore } from "@/store/useAppStore";
 import { useQueryExecutor } from "@/hooks/useQueryExecutor";
 import { IntelligencePanel } from "@/components/IntelligencePanel";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,16 +64,16 @@ function getColumnsFromSql(sql: string | null): [string, string] {
   return [cols[0] || "col1", cols[1] || cols[0] || "col2"];
 }
 
-const PRAGMA_TOOLTIPS: Record<string, string> = {
-  ncol: "Number of columns in the table",
-  wr: "WITHOUT ROWID (1 if true, 0 if false)",
-  strict: "STRICT table (1 if true, 0 if false)",
-  cid: "Column ID",
-  notnull: "NOT NULL constraint (1 if true, 0 if false)",
-  dflt_value: "Default value",
-  pk: "Primary Key (1 if true, 0 if false)",
-  schema: "The database schema (usually 'main')",
-  type: "Object type (e.g. table, view, index)",
+const PRAGMA_TOOLTIPS: Record<string, TranslationKey> = {
+  ncol: "d1.pragma.ncol",
+  wr: "d1.pragma.wr",
+  strict: "d1.pragma.strict",
+  cid: "d1.pragma.cid",
+  notnull: "d1.pragma.notnull",
+  dflt_value: "d1.pragma.dfltValue",
+  pk: "d1.pragma.pk",
+  schema: "d1.pragma.schema",
+  type: "d1.pragma.type",
 };
 
 // ── Result data table (shared display component) ───────────────────────────────
@@ -86,6 +87,7 @@ function ResultTable({
   columns: string[];
   rows: Record<string, unknown>[];
 }) {
+  const { t } = useI18n();
   const [offset, setOffset] = useState(0);
 
   const page = rows.slice(offset, offset + PAGE);
@@ -104,7 +106,8 @@ function ResultTable({
               <TableRow className="bg-muted/30 hover:bg-muted/30">
                 <TableHead className={`w-10 text-center text-[10px] text-muted-foreground/40 font-mono px-2 ${paddingY}`}>#</TableHead>
                 {columns.map((col) => {
-                  const tooltipText = PRAGMA_TOOLTIPS[col.toLowerCase()];
+                  const tooltipKey = PRAGMA_TOOLTIPS[col.toLowerCase()];
+                  const tooltipText = tooltipKey ? t(tooltipKey) : null;
                   return (
                     <TableHead key={col} className={`text-xs font-medium uppercase tracking-wider text-muted-foreground whitespace-nowrap ${paddingY}`}>
                       {tooltipText ? (
@@ -162,14 +165,18 @@ function ResultTable({
       {/* Pagination */}
       <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-1.5 shrink-0">
         <span className="text-xs text-muted-foreground/50 tabular-nums">
-          {rows.length} row{rows.length !== 1 ? "s" : ""} · showing {offset + 1}–{Math.min(offset + PAGE, rows.length)}
+          {t(rows.length === 1 ? "d1.query.resultFooterSingular" : "d1.query.resultFooter", {
+            count: rows.length,
+            start: offset + 1,
+            end: Math.min(offset + PAGE, rows.length),
+          })}
         </span>
         {(hasPrev || hasNext) && (
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" className="h-6 w-6" disabled={!hasPrev} onClick={() => setOffset(Math.max(0, offset - PAGE))} aria-label="Prev">
+            <Button variant="outline" size="icon" className="h-6 w-6" disabled={!hasPrev} onClick={() => setOffset(Math.max(0, offset - PAGE))} aria-label={t("common.previousPage")}>
               <ChevronLeft size={11} />
             </Button>
-            <Button variant="outline" size="icon" className="h-6 w-6" disabled={!hasNext} onClick={() => setOffset(offset + PAGE)} aria-label="Next">
+            <Button variant="outline" size="icon" className="h-6 w-6" disabled={!hasNext} onClick={() => setOffset(offset + PAGE)} aria-label={t("common.nextPage")}>
               <ChevronRight size={11} />
             </Button>
           </div>
@@ -179,10 +186,10 @@ function ResultTable({
   );
 }
 
-const templates = [
-  { label: "Select All", sql: "SELECT * FROM your_table LIMIT 50;" },
-  { label: "List Tables", sql: "SELECT name FROM sqlite_master WHERE type='table';" },
-  { label: "Table Schema", sql: "PRAGMA table_info(your_table);" },
+const templates: { labelKey: TranslationKey; sql: string }[] = [
+  { labelKey: "d1.query.templateSelectAll", sql: "SELECT * FROM your_table LIMIT 50;" },
+  { labelKey: "d1.query.templateListTables", sql: "SELECT name FROM sqlite_master WHERE type='table';" },
+  { labelKey: "d1.query.templateTableSchema", sql: "PRAGMA table_info(your_table);" },
 ];
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -193,6 +200,7 @@ interface QueryEditorProps {
 }
 
 export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
+  const { t } = useI18n();
   const dynamicTemplateData = useMemo(() => {
     if (!tables || tables.length === 0) return { table: "your_table", col1: "col1", col2: "col2" };
     // Prefer user tables over system tables
@@ -295,7 +303,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
       if (tableName && tables && tables.length > 0) {
         const exists = tables.some(t => t.name.toLowerCase() === tableName.toLowerCase());
         if (!exists) {
-          executor.setValidationError(`Table "${tableName}" not found in database.`);
+          executor.setValidationError(t("d1.query.tableNotFound", { table: tableName }));
         } else {
           executor.setValidationError(null);
         }
@@ -305,7 +313,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
     }, 150); // Faster debounce for instant feel
 
     return () => clearTimeout(timer);
-  }, [sql, tables, executor.checkMutation, executor.getTableNameFromSql, executor.setValidationError, executor.requiresConfirmation, executor.cancelConfirmation]);
+  }, [sql, tables, t, executor.checkMutation, executor.getTableNameFromSql, executor.setValidationError, executor.requiresConfirmation, executor.cancelConfirmation]);
 
   // Cmd/Ctrl + Enter submits
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -326,13 +334,13 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
           {/* Template buttons */}
           <div className="flex items-center gap-1 flex-1 min-w-0 flex-wrap">
             <Sparkles size={11} strokeWidth={1.75} className="text-muted-foreground/40 shrink-0" />
-            {templates.map((t: { label: string; sql: string }) => (
+            {templates.map((template) => (
               <button
-                key={t.label}
-                onClick={() => setSql(t.sql)}
+                key={template.labelKey}
+                onClick={() => setSql(template.sql)}
                 className="text-[10px] text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 rounded px-1.5 py-0.5 transition-colors font-mono"
               >
-                {t.label}
+                {t(template.labelKey)}
               </button>
             ))}
           </div>
@@ -342,7 +350,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
             variant="ghost" size="icon"
             className="h-6 w-6 text-muted-foreground hover:text-foreground shrink-0"
             onClick={() => { setSql(""); setStatus({ kind: "idle" }); textareaRef.current?.focus(); }}
-            title="Clear"
+            title={t("d1.query.clear")}
           >
             <RotateCcw size={11} />
           </Button>
@@ -365,12 +373,12 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
                 ? <AlertCircle size={12} strokeWidth={3} />
                 : <Play size={12} strokeWidth={2.5} />}
             {executor.isAnalyzing 
-              ? "Analyzing…" 
+              ? t("d1.query.analyzing")
               : isRunning 
-                ? "Running…" 
+                ? t("d1.query.running")
                 : executor.requiresConfirmation 
-                  ? "CONFIRM EXECUTION" 
-                  : "Run"}
+                  ? t("d1.query.confirmExecution")
+                  : t("d1.query.run")}
             {!isRunning && !executor.isAnalyzing && !executor.requiresConfirmation && (
               <kbd className="hidden sm:inline text-[9px] bg-primary-foreground/20 px-1 py-px rounded font-sans leading-none">
                 ⌘↵
@@ -422,7 +430,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
         {status.kind === "idle" && (
           <div className="flex items-center justify-center h-full text-center px-6 gap-2 text-muted-foreground/30">
             <Play size={14} strokeWidth={1.5} />
-            <span className="text-xs">Run a query to see results</span>
+            <span className="text-xs">{t("d1.query.runPrompt")}</span>
           </div>
         )}
 
@@ -430,7 +438,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
         {status.kind === "running" && (
           <div className="flex items-center justify-center h-full gap-2 text-muted-foreground/50">
             <Loader2 size={16} className="animate-spin" />
-            <span className="text-xs">Executing…</span>
+            <span className="text-xs">{t("d1.query.executing")}</span>
           </div>
         )}
 
@@ -452,7 +460,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
             <Alert className="border-emerald-500/30 bg-emerald-500/5 text-emerald-400">
               <CheckCircle2 size={14} />
               <AlertDescription className="text-xs flex items-center gap-3">
-                <span>Query executed successfully</span>
+                <span>{t("d1.query.success")}</span>
                 {status.duration != null && (
                   <Badge variant="secondary" className="font-mono text-[10px]">
                     {status.duration.toFixed(2)} ms
@@ -470,11 +478,11 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
               <CheckCircle2 size={14} />
               <AlertDescription className="text-xs flex flex-wrap items-center gap-3">
                 <span>
-                  {status.changes} row{status.changes !== 1 ? "s" : ""} affected
+                  {t(status.changes === 1 ? "d1.query.rowAffected" : "d1.query.rowsAffected", { count: status.changes })}
                 </span>
                 {status.lastRowId != null && (
                   <span className="text-emerald-400/60">
-                    Last row ID: <span className="font-mono">{status.lastRowId}</span>
+                    {t("d1.query.lastRowId")} <span className="font-mono">{status.lastRowId}</span>
                   </span>
                 )}
                 {status.duration != null && (
@@ -494,7 +502,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
             <div className="flex items-center gap-3 px-4 py-2 border-b border-border bg-muted/20 shrink-0">
               <CheckCircle2 size={12} className="text-emerald-400 shrink-0" />
               <span className="text-xs text-muted-foreground">
-                <span className="text-foreground font-medium tabular-nums">{status.rows.length}</span> row{status.rows.length !== 1 ? "s" : ""} returned
+                {t(status.rows.length === 1 ? "d1.query.rowReturned" : "d1.query.rowsReturned", { count: status.rows.length })}
               </span>
 
               {status.duration != null && (
@@ -504,7 +512,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
               )}
               {status.rowsRead != null && (
                 <span className="text-[10px] text-muted-foreground/40 tabular-nums">
-                  {status.rowsRead} rows scanned
+                  {t("d1.query.rowsScanned", { count: status.rowsRead })}
                 </span>
               )}
             </div>
