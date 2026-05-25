@@ -19,6 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -32,6 +33,7 @@ import {
   fetchWorkersOverview,
   setWorkerSubdomain,
   startWorkerTail,
+  updateWorkerObservability,
   updateWorkerSchedules,
   upsertWorkerSecret,
   type RemoteSection,
@@ -46,7 +48,7 @@ const WORKERS_DOCS_URL = "https://developers.cloudflare.com/workers/";
 const WORKERS_LOGS_DOCS_URL = "https://developers.cloudflare.com/workers/observability/logs/workers-logs/";
 const WORKERS_METRICS_DOCS_URL = "https://developers.cloudflare.com/workers/observability/metrics-and-analytics/";
 
-type FilterMode = "all" | "domains" | "routes" | "bindings";
+type FilterMode = "all" | "domains" | "routes" | "bindings" | "observability";
 
 const METRIC_RANGES = [
   { label: "15m", minutes: 15 },
@@ -89,6 +91,16 @@ function getNumber(value: unknown, key: string): number {
   return 0;
 }
 
+function getOptionalNumber(value: unknown, key: string): number | undefined {
+  const field = asRecord(value)[key];
+  if (typeof field === "number" && Number.isFinite(field)) return field;
+  if (typeof field === "string" && field.trim()) {
+    const parsed = Number(field);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 function dateLabel(value?: string | null) {
   if (!value) return "Unknown";
   const date = new Date(value);
@@ -104,6 +116,28 @@ function workerBindings(detail: WorkerDetail | null): unknown[] {
   const settingsBindings = asArray(asRecord(detail.settings.data).bindings);
   const scriptBindings = asArray(asRecord(detail.script).bindings);
   return settingsBindings.length > 0 ? settingsBindings : scriptBindings;
+}
+
+function observabilityRecord(detail: WorkerDetail | null): Record<string, unknown> {
+  if (!detail) return {};
+  const scriptSettingsObservability = asRecord(detail.script_settings.data).observability;
+  if (scriptSettingsObservability) return asRecord(scriptSettingsObservability);
+  return asRecord(asRecord(detail.script).observability);
+}
+
+function observabilitySummary(value: unknown) {
+  const observability = asRecord(value);
+  const logs = asRecord(observability.logs);
+  return {
+    enabled: getBool(observability, "enabled"),
+    logsEnabled: getBool(logs, "enabled"),
+    invocationLogs: getBool(logs, "invocation_logs"),
+    headSamplingRate: getOptionalNumber(observability, "head_sampling_rate") ?? getOptionalNumber(logs, "head_sampling_rate"),
+  };
+}
+
+function observabilityEnabled(value: unknown): boolean | undefined {
+  return observabilitySummary(value).enabled;
 }
 
 function sectionDataArray(section: RemoteSection | undefined, preferredKey: string): unknown[] {
@@ -183,6 +217,7 @@ function WorkerListItem({
   onSelect: () => void;
 }) {
   const hasTraffic = worker.domains.length > 0 || worker.routes.length > 0;
+  const workerObservabilityEnabled = observabilityEnabled(worker.observability);
 
   return (
     <button
@@ -205,6 +240,9 @@ function WorkerListItem({
         <Badge variant="outline">{worker.bindings.length} bindings</Badge>
         <Badge variant="outline">{worker.domains.length} domains</Badge>
         <Badge variant="outline">{worker.routes.length} routes</Badge>
+        <Badge variant={workerObservabilityEnabled === true ? "secondary" : "outline"}>
+          {workerObservabilityEnabled === true ? "observability on" : "observability off"}
+        </Badge>
       </div>
     </button>
   );
@@ -254,6 +292,7 @@ function WorkerDetailView({
   const [subdomainStatus, setSubdomainStatus] = useState<"idle" | "saving">("idle");
   const [cronStatus, setCronStatus] = useState<"idle" | "saving">("idle");
   const [tailStatus, setTailStatus] = useState<"idle" | "starting">("idle");
+  const [observabilityStatus, setObservabilityStatus] = useState<"idle" | "saving">("idle");
   const [metricsStatus, setMetricsStatus] = useState<"idle" | "loading" | "error">("idle");
   const [metricsRange, setMetricsRange] = useState(60);
   const [metrics, setMetrics] = useState<WorkerMetrics | null>(null);
@@ -267,11 +306,15 @@ function WorkerDetailView({
   const [domainEnvironment, setDomainEnvironment] = useState("production");
   const [routePattern, setRoutePattern] = useState("");
   const [routeZoneId, setRouteZoneId] = useState("");
+  const [observabilityEnabledDraft, setObservabilityEnabledDraft] = useState(true);
+  const [observabilitySamplingDraft, setObservabilitySamplingDraft] = useState("1");
+  const [invocationLogsEnabledDraft, setInvocationLogsEnabledDraft] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const workerName = detail ? (getString(detail.script, "id") ?? getString(detail.script, "name") ?? "worker") : "";
   const metricSummary = useMemo(() => workerMetricsSummary(metrics), [metrics]);
+  const currentObservability = useMemo(() => observabilitySummary(observabilityRecord(detail)), [detail]);
 
   useEffect(() => {
     setSecretName("");
@@ -296,6 +339,13 @@ function WorkerDetailView({
         .filter((cron): cron is string => Boolean(cron))
         .join("\n")
     );
+  }, [detail]);
+
+  useEffect(() => {
+    const summary = observabilitySummary(observabilityRecord(detail));
+    setObservabilityEnabledDraft(summary.enabled !== false);
+    setObservabilitySamplingDraft(String(summary.headSamplingRate ?? 1));
+    setInvocationLogsEnabledDraft(summary.invocationLogs !== false);
   }, [detail]);
 
   useEffect(() => {
@@ -427,6 +477,35 @@ function WorkerDetailView({
       setError(String(tailError));
     } finally {
       setTailStatus("idle");
+    }
+  };
+
+  const saveObservabilitySettings = async () => {
+    const samplingRate = Number(observabilitySamplingDraft);
+    if (!Number.isFinite(samplingRate) || samplingRate < 0 || samplingRate > 1) {
+      setError("Sampling rate must be a number between 0 and 1.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Update Workers Logs observability for ${workerName}? This changes Cloudflare log collection settings.`
+    );
+    if (!confirmed) return;
+    setObservabilityStatus("saving");
+    setMessage(null);
+    setError(null);
+    try {
+      await updateWorkerObservability(
+        workerName,
+        observabilityEnabledDraft,
+        samplingRate,
+        invocationLogsEnabledDraft
+      );
+      setMessage("Observability settings updated.");
+      onRefresh();
+    } catch (saveError) {
+      setError(String(saveError));
+    } finally {
+      setObservabilityStatus("idle");
     }
   };
 
@@ -612,7 +691,9 @@ function WorkerDetailView({
           <div className="rounded-lg border border-border bg-background p-4">
             <h3 className="text-sm font-semibold">Risk checks</h3>
             <div className="mt-3 grid gap-2">
-              <Badge variant={detail.script_settings.error ? "outline" : "secondary"}>Observability settings</Badge>
+              <Badge variant={currentObservability.enabled === true ? "secondary" : "outline"}>
+                Observability {currentObservability.enabled === true ? "enabled" : "not enabled"}
+              </Badge>
               <Badge variant={deployments.length > 0 ? "secondary" : "outline"}>{deployments.length} deployments</Badge>
               <Badge variant={versions.length > 0 ? "secondary" : "outline"}>{versions.length} versions</Badge>
               <Badge variant={bindings.length > 0 ? "secondary" : "outline"}>{bindings.length} bindings</Badge>
@@ -726,7 +807,68 @@ function WorkerDetailView({
         </TabsContent>
 
         <TabsContent value="logs" className="mt-0 grid gap-4">
+          <SectionError section={detail.script_settings} />
           <SectionError section={detail.tails} />
+          <div className="rounded-lg border border-border bg-background p-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold">Workers Logs observability</h3>
+                    <Badge variant={currentObservability.enabled === true ? "secondary" : "outline"}>
+                      {currentObservability.enabled === true ? "enabled" : "not enabled"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                    CF Studio updates Cloudflare Workers Logs settings through script settings. Log lines stay in Cloudflare.
+                  </p>
+                </div>
+                <Button onClick={saveObservabilitySettings} disabled={observabilityStatus === "saving"}>
+                  {observabilityStatus === "saving" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <ShieldCheck size={14} className="mr-2" />}
+                  Save observability
+                </Button>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[1fr_180px_1fr]">
+                <label className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">Workers Logs</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      Enable Cloudflare observability for this Worker.
+                    </span>
+                  </span>
+                  <Switch checked={observabilityEnabledDraft} onCheckedChange={setObservabilityEnabledDraft} />
+                </label>
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <label className="block text-xs font-medium text-muted-foreground">Sampling rate</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={observabilitySamplingDraft}
+                    onChange={(event) => setObservabilitySamplingDraft(event.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+                <label className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium">Invocation logs</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      Include one invocation log for each sampled Worker event.
+                    </span>
+                  </span>
+                  <Switch checked={invocationLogsEnabledDraft} onCheckedChange={setInvocationLogsEnabledDraft} />
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline">logs {currentObservability.logsEnabled === false ? "off" : "on or default"}</Badge>
+                <Badge variant="outline">invocations {currentObservability.invocationLogs === false ? "off" : "on or default"}</Badge>
+                <Badge variant="outline">sampling {currentObservability.headSamplingRate ?? 1}</Badge>
+              </div>
+            </div>
+          </div>
           <div className="rounded-lg border border-border bg-background p-4">
             <div className="flex items-start gap-3">
               <Terminal size={16} className="mt-0.5 text-primary" />
@@ -1081,7 +1223,8 @@ export function WorkersView({ onNavigate }: WorkersViewProps) {
         filter === "all" ||
         (filter === "domains" && worker.domains.length > 0) ||
         (filter === "routes" && worker.routes.length > 0) ||
-        (filter === "bindings" && worker.bindings.length > 0);
+        (filter === "bindings" && worker.bindings.length > 0) ||
+        (filter === "observability" && observabilityEnabled(worker.observability) !== true);
       return matchesQuery && matchesFilter;
     });
   }, [filter, overview, query]);
@@ -1135,7 +1278,7 @@ export function WorkersView({ onNavigate }: WorkersViewProps) {
               </div>
             </form>
             <div className="mt-3 flex flex-wrap gap-2">
-              {(["all", "domains", "routes", "bindings"] as FilterMode[]).map((item) => (
+              {(["all", "domains", "routes", "bindings", "observability"] as FilterMode[]).map((item) => (
                 <Button
                   key={item}
                   size="sm"

@@ -686,6 +686,54 @@ pub async fn start_worker_tail(script_name: String) -> Result<Value, RemoteResou
 }
 
 #[tauri::command]
+pub async fn update_worker_observability(
+    script_name: String,
+    enabled: bool,
+    head_sampling_rate: Option<f64>,
+    invocation_logs: bool,
+) -> Result<Value, RemoteResourceError> {
+    let (client, account_id) = client_and_account().await?;
+    let encoded_script = urlencoding::encode(&script_name);
+    let endpoint =
+        format!("accounts/{account_id}/workers/scripts/{encoded_script}/script-settings");
+
+    let sampling_rate = head_sampling_rate.unwrap_or(1.0);
+    if !sampling_rate.is_finite() || !(0.0..=1.0).contains(&sampling_rate) {
+        return Err(RemoteResourceError::Api(
+            "Observability sampling rate must be between 0 and 1.".to_string(),
+        ));
+    }
+
+    let current_settings = get_result::<Value>(&client, &endpoint).await?;
+    let mut observability = current_settings
+        .get("observability")
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+
+    observability["enabled"] = Value::Bool(enabled);
+    observability["head_sampling_rate"] = json!(sampling_rate);
+
+    let mut logs = observability
+        .get("logs")
+        .filter(|value| value.is_object())
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    logs["enabled"] = Value::Bool(enabled);
+    logs["invocation_logs"] = Value::Bool(invocation_logs);
+    logs["head_sampling_rate"] = json!(sampling_rate);
+    observability["logs"] = logs;
+
+    let response = client
+        .patch(&endpoint)
+        .json(&json!({ "observability": observability }))
+        .send()
+        .await?;
+
+    parse_cloudflare_write_response(response).await
+}
+
+#[tauri::command]
 pub async fn fetch_worker_metrics(
     script_name: String,
     minutes: Option<u32>,

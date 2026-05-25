@@ -166,6 +166,20 @@ export function startWorkerTail(scriptName: string): Promise<unknown> {
   return invokeCloudflare<unknown>("start_worker_tail", { scriptName });
 }
 
+export function updateWorkerObservability(
+  scriptName: string,
+  enabled: boolean,
+  headSamplingRate: number,
+  invocationLogs: boolean
+): Promise<unknown> {
+  return invokeCloudflare<unknown>("update_worker_observability", {
+    scriptName,
+    enabled,
+    headSamplingRate,
+    invocationLogs,
+  });
+}
+
 export function fetchWorkerMetrics(scriptName: string, minutes: number): Promise<WorkerMetrics> {
   return invokeCloudflare<WorkerMetrics>("fetch_worker_metrics", { scriptName, minutes });
 }

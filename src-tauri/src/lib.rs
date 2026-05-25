@@ -231,6 +231,7 @@ pub fn run() {
             remote_resources::set_worker_subdomain,
             remote_resources::update_worker_schedules,
             remote_resources::start_worker_tail,
+            remote_resources::update_worker_observability,
             remote_resources::fetch_worker_metrics,
             remote_resources::attach_worker_domain,
             remote_resources::detach_worker_domain,
