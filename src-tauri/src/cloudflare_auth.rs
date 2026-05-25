@@ -1,8 +1,8 @@
 // cloudflare_auth.rs
 //
 // Reads the local Wrangler OAuth config to provide zero-touch authentication.
-// No API tokens are ever stored in CF Studio — we reuse the session that
-// `wrangler login` already created on the user's machine.
+// When the user already exports CLOUDFLARE_API_TOKEN for Wrangler, use that
+// in-memory value first. No API tokens are stored by CF Studio.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -27,7 +27,7 @@ pub enum AuthError {
     #[error("Failed to parse Wrangler config TOML: {0}")]
     TomlParse(#[from] toml::de::Error),
 
-    #[error("No oauth_token found in Wrangler config. Run `wrangler login` first.")]
+    #[error("No oauth_token found in Wrangler config and CLOUDFLARE_API_TOKEN is not set. Run `wrangler login` first.")]
     NoToken,
 
     #[error("Command execution failed: {0}")]
@@ -169,8 +169,22 @@ pub fn wrangler_config_path() -> Result<PathBuf, AuthError> {
 
 // ── Core parsing logic ─────────────────────────────────────────────────────────
 
+fn env_api_token() -> Option<String> {
+    std::env::var("CLOUDFLARE_API_TOKEN")
+        .ok()
+        .map(|token| token.trim().to_string())
+        .filter(|token| !token.is_empty())
+}
+
 /// Reads and parses the Wrangler config, returning the extracted credentials.
 pub fn read_credentials() -> Result<CloudflareCredentials, AuthError> {
+    if let Some(api_token) = env_api_token() {
+        return Ok(CloudflareCredentials {
+            oauth_token: api_token,
+            account_id: std::env::var("CLOUDFLARE_ACCOUNT_ID").ok(),
+        });
+    }
+
     let candidates = wrangler_candidate_paths();
     if candidates.is_empty() {
         return Err(AuthError::ConfigDirNotFound);
@@ -263,6 +277,10 @@ pub fn read_credentials() -> Result<CloudflareCredentials, AuthError> {
 /// re-read the configuration file and return the fresh token.
 #[tauri::command]
 pub async fn refresh_wrangler_token() -> Result<CloudflareCredentials, AuthError> {
+    if env_api_token().is_some() {
+        return read_credentials();
+    }
+
     let output = tokio::task::spawn_blocking(|| {
         let mut cmd = if cfg!(target_os = "windows") {
             let mut c = std::process::Command::new("cmd");
