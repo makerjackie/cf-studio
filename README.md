@@ -8,6 +8,16 @@ A blazing-fast, native desktop client for Cloudflare D1 and R2.
 
 This MakerJackie fork publishes builds through [GitHub Releases](https://github.com/makerjackie/cf-studio/releases). For local development, use the commands in [README.zh-CN.md](README.zh-CN.md).
 
+### macOS Gatekeeper
+
+This fork is currently distributed without Apple signing or notarization. If macOS blocks the app after installation, move `CF-Studio.app` to `/Applications`, then run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/CF-Studio.app
+```
+
+Then open the app again from Finder or Spotlight.
+
 <div align="center">
   <img src="screenshots/Terminal Look.png" width="800" alt="CF Studio installer in the terminal" />
 </div>
@@ -130,7 +140,7 @@ CF Studio includes high-tier features for comprehensive management:
 
 1. Clone the repository:
     ```bash
-    git clone https://github.com/mubashardev/cf-studio.git
+    git clone https://github.com/makerjackie/cf-studio.git
     cd cf-studio
     ```
 

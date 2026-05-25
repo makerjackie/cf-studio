@@ -92,7 +92,7 @@ src-tauri/target/release/bundle/macos/CF-Studio.app
 cp -R "src-tauri/target/release/bundle/macos/CF-Studio.app" /Applications/
 ```
 
-如果 macOS 阻止打开本地构建版本，可以移除 quarantine 标记：
+这个 fork 暂时不做 Apple 签名和公证。如果 macOS 阻止打开本地构建版本或从 Release 下载的版本，可以移除 quarantine 标记：
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/CF-Studio.app

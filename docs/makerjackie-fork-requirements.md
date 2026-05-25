@@ -49,6 +49,7 @@ The strongest use case is fast local management for D1, R2, and KV when the Clou
 - Build local macOS app and DMG through `bun run tauri build`.
 - Use the MakerJackie GitHub release endpoint for update checks.
 - GitHub Actions can build macOS, Windows, and Linux release artifacts from `main`.
+- Do not require Apple signing/notarization for now; document the macOS quarantine removal command for personal builds.
 
 ## R2 Custom Domain Behavior
 
@@ -171,5 +172,5 @@ Acceptance:
 
 - Whether to keep upstream branding or rename the fork for personal use.
 - Whether to ship only macOS releases or keep the cross-platform GitHub Actions matrix.
-- Whether the first public-facing release should be signed/notarized or kept as an unsigned personal build.
+- When to add Apple signing and notarization for broader public distribution.
 - Whether custom domain creation should stay Dashboard-only or be exposed in app later.

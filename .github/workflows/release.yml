@@ -79,7 +79,7 @@ jobs:
             echo "### macOS Note"
             echo "*If macOS blocks the app after first install, run:*"
             echo ""
-            echo "\`xattr -cr /Applications/CF-Studio.app\`"
+            echo "\`xattr -dr com.apple.quarantine /Applications/CF-Studio.app\`"
             echo ""
             echo "### Windows Note"
             echo "*Windows SmartScreen may show a warning — click **\"More info\"** → **\"Run anyway\"** to proceed.*"
