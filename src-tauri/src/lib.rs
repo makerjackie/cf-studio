@@ -3,11 +3,12 @@
 pub mod cloudflare_auth;
 pub mod cloudflare_client;
 pub mod d1;
+pub mod db;
+pub mod permissions;
 pub mod r2;
 pub mod setup;
 pub mod shell_env;
 pub mod user;
-pub mod db;
 
 #[path = "../../src/pro_modules/rust/history.rs"]
 pub mod history_pro;
@@ -30,10 +31,10 @@ fn is_pro_enabled() -> bool {
 }
 
 use cloudflare_auth::{read_credentials, AuthError, CloudflareCredentials};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use tauri::Manager;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tauri::Manager;
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Default)]
@@ -49,10 +50,12 @@ pub struct UploadState {
 async fn get_cloudflare_token() -> Result<CloudflareCredentials, AuthError> {
     tokio::task::spawn_blocking(read_credentials)
         .await
-        .unwrap_or_else(|e| Err(AuthError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            e.to_string(),
-        ))))
+        .unwrap_or_else(|e| {
+            Err(AuthError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            )))
+        })
 }
 
 /// Dev-only greet command — remove before shipping.
@@ -62,7 +65,6 @@ fn greet(name: &str) -> String {
 }
 
 // ── Tauri App Entry Point ──────────────────────────────────────────────────────
-
 
 use std::process::Command;
 
@@ -79,9 +81,12 @@ async fn download_update_binary(
 
     let client = reqwest::Client::new();
     let response = client.get(url).send().await.map_err(|e| e.to_string())?;
-    
+
     if !response.status().is_success() {
-        return Err(format!("Server returned error {}: The update file might not be ready on GitHub yet.", response.status()));
+        return Err(format!(
+            "Server returned error {}: The update file might not be ready on GitHub yet.",
+            response.status()
+        ));
     }
 
     let total_size = response
@@ -102,16 +107,15 @@ async fn download_update_binary(
 
         if total_size > 0 {
             let progress = (downloaded as f64 / total_size as f64) * 100.0;
-            app.emit("update-download-progress", progress).map_err(|e| e.to_string())?;
+            app.emit("update-download-progress", progress)
+                .map_err(|e| e.to_string())?;
         }
     }
 
     // --- NEW: Automatically launch the installer from Rust ---
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("open")
-            .arg(&dest_path)
-            .spawn();
+        let _ = Command::new("open").arg(&dest_path).spawn();
     }
     #[cfg(target_os = "windows")]
     {
@@ -133,7 +137,7 @@ fn fix_mac_quarantine() -> Result<(), String> {
             .args(["-cr", "/Applications/CF Studio.app"])
             .status()
             .map_err(|e: std::io::Error| e.to_string())?;
-        
+
         if !status.success() {
             return Err("Failed to clear xattr".to_string());
         }
@@ -154,7 +158,9 @@ pub fn run() {
         .setup(|app| {
             cloudflare_auth::start_wrangler_watcher(app.handle().clone());
             match db::init_db(app.handle()) {
-                Ok(db_state) => { app.manage(db_state); },
+                Ok(db_state) => {
+                    app.manage(db_state);
+                }
                 Err(e) => eprintln!("Failed to initialize query history database: {}", e),
             }
             Ok(())
@@ -167,6 +173,9 @@ pub fn run() {
             cloudflare_auth::run_wrangler_login,
             cloudflare_auth::run_wrangler_logout,
             cloudflare_auth::fetch_cloudflare_accounts,
+            cloudflare_auth::save_cloudflare_api_token,
+            cloudflare_auth::clear_saved_cloudflare_api_token,
+            cloudflare_auth::saved_cloudflare_api_token_status,
             d1::fetch_d1_databases,
             d1::execute_d1_query,
             d1::analyze_d1_query,
@@ -196,20 +205,20 @@ pub fn run() {
             r2_pro::delete_r2_bucket,
             r2_pro::empty_r2_bucket,
             r2_pro::upload_r2_object,
+            r2_pro::upload_r2_object_bytes,
             r2_pro::cancel_upload_r2_object,
             r2_pro::download_r2_object,
             r2_pro::update_r2_bucket_managed_domain,
             r2_pro::add_r2_bucket_custom_domain,
             r2_pro::remove_r2_bucket_custom_domain,
             r2_pro::get_r2_bucket_domains_list,
+            permissions::check_cloudflare_permissions,
             // ── Setup ──
             setup::check_dependencies,
             setup::install_dependencies,
             download_update_binary,
-
             // ── History Commands (Gated by remote config on frontend) ──
             is_pro_enabled,
-
             history_pro::save_query_history,
             history_pro::get_paginated_history,
             history_pro::get_global_stats,

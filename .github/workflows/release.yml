@@ -1,13 +1,14 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
 
 jobs:
   prepare:
-    if: "endsWith(github.event.head_commit.message, '--release')"
+    if: "github.event_name == 'workflow_dispatch' || endsWith(github.event.head_commit.message, '--release')"
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.verify_version.outputs.new_version }}
@@ -63,19 +64,6 @@ jobs:
             fi
 
             echo "---"
-            echo "### Quick Install / Update"
-            echo ""
-            echo "**For macOS/Linux (Bash Terminal):**"
-            echo "\`\`\`bash"
-            echo "curl -fsSL https://install.cfstudio.dev | bash"
-            echo "\`\`\`"
-            echo ""
-            echo "**For Windows (PowerShell):**"
-            echo "\`\`\`powershell"
-            echo "irm https://install.cfstudio.dev | iex"
-            echo "\`\`\`"
-            echo ""
-
             echo "### Manual Downloads"
             echo ""
             echo "| Platform | Architecture | File |"
@@ -89,7 +77,7 @@ jobs:
             echo "---"
             echo ""
             echo "### macOS Note"
-            echo "*You may need to run this command in your terminal after first open if getting any issue:*"
+            echo "*If macOS blocks the app after first install, run:*"
             echo ""
             echo "\`xattr -cr /Applications/CF-Studio.app\`"
             echo ""

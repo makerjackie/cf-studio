@@ -40,7 +40,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/mubashardev/cf-studio/releases/latest"
+        "https://github.com/makerjackie/cf-studio/releases/latest"
       ],
       "dialog": false,
       "pubkey": ""

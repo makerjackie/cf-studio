@@ -4,19 +4,9 @@ Simplified Chinese README: [README.zh-CN.md](README.zh-CN.md).
 
 A blazing-fast, native desktop client for Cloudflare D1 and R2.
 
-[Website](https://cfstudio.dev) • [Portfolio](https://mubashar.dev) • [YouTube](https://youtube.com/@mubashardev)
-
 ## Install / Update
 
-For macOS/Linux (Bash Terminal):
-```bash
-curl -fsSL https://install.cfstudio.dev | bash
-```
-
-For Windows (PowerShell):
-```powershell
-irm https://install.cfstudio.dev | iex
-```
+This MakerJackie fork publishes builds through [GitHub Releases](https://github.com/makerjackie/cf-studio/releases). For local development, use the commands in [README.zh-CN.md](README.zh-CN.md).
 
 <div align="center">
   <img src="screenshots/Terminal Look.png" width="800" alt="CF Studio installer in the terminal" />

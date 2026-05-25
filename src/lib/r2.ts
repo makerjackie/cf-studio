@@ -84,6 +84,20 @@ export async function uploadR2Object(
   return invokeCloudflare<void>("upload_r2_object", { bucketName, key, localPath, uploadId });
 }
 
+export async function uploadR2ObjectBytes(
+  bucketName: string,
+  key: string,
+  bytes: number[],
+  contentType?: string
+): Promise<void> {
+  return invokeCloudflare<void>("upload_r2_object_bytes", {
+    bucketName,
+    key,
+    bytes,
+    contentType,
+  });
+}
+
 /**
  * Cancel an ongoing upload process.
  */
