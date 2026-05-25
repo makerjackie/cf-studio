@@ -3,6 +3,7 @@
 // API wrappers for the Cloudflare R2 zero-touch commands.
 // All requests are proxied via Tauri to use the Wrangler OAuth token seamlessly.
 
+import { invoke } from "@tauri-apps/api/core";
 import { invokeCloudflare } from "@/hooks/useCloudflare";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -67,6 +68,10 @@ export async function listR2Objects(
   prefix: string
 ): Promise<FolderListing> {
   return invokeCloudflare<FolderListing>("list_r2_objects", { bucketName, prefix });
+}
+
+export async function cacheR2PublicThumbnail(url: string, cacheKey: string): Promise<string> {
+  return invoke<string>("cache_r2_public_thumbnail", { url, cacheKey });
 }
 
 /**

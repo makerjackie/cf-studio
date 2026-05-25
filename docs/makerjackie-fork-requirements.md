@@ -20,14 +20,21 @@ The strongest use case is fast local management for D1, R2, and KV when the Clou
 ### R2
 
 - List buckets and objects.
+- Cache object listings by account, bucket, and prefix, then refresh stale listings in the background.
+- Prefetch common child prefixes after a folder loads, and prefetch a folder when the user hovers or focuses it.
 - Upload files from file picker.
 - Upload files by drag and drop.
 - Upload images from clipboard.
+- Upload to a custom prefix or optional date folder.
+- Rename a single object before upload.
+- Handle upload name conflicts with auto-rename, skip, or confirmed overwrite.
 - Download objects.
 - Preview public images when a public domain is enabled.
+- Cache public image previews locally in the app cache.
 - Copy object public URLs.
+- Copy Markdown image syntax for public objects.
+- Search cached folders and files locally.
 - Detect bucket public domain status by checking custom domains first, then managed `r2.dev`.
-- Cache bucket object listings by bucket and prefix, then refresh stale listings in the background.
 - Keep manual object-list refresh available for users who need current remote state immediately.
 
 ### Permissions
@@ -107,6 +114,9 @@ Requirements:
 - Optional prefix selector, for example `images/`, `blog/`, `assets/`.
 - Basic conflict handling when the object key already exists.
 - Stale-while-revalidate browsing for bucket folders and object listings.
+- Account-scoped object-list cache so switching accounts does not reuse another account's listings.
+- Local cached image previews for public image objects.
+- Common prefix prefetch for faster folder navigation.
 
 Acceptance:
 

@@ -199,6 +199,7 @@ pub fn run() {
             r2::list_r2_objects,
             r2::delete_r2_object,
             r2::get_r2_bucket_domain,
+            r2::cache_r2_public_thumbnail,
             // ── R2 Pro (gated by remote config on the frontend) ──
             r2_pro::fetch_cloudflare_zones,
             r2_pro::create_r2_bucket,

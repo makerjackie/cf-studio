@@ -7,6 +7,8 @@
 // Public commands: fetch_r2_buckets, list_r2_objects, delete_r2_object, get_r2_bucket_domain
 
 use serde::{Deserialize, Serialize};
+use std::{io::Cursor, time::SystemTime};
+use tauri::Manager;
 
 use crate::cloudflare_auth::{read_credentials, AuthError};
 use crate::cloudflare_client::{CfError, CfResponse, CloudflareClient};
@@ -29,6 +31,12 @@ pub enum R2Error {
 
     #[error("Cloudflare API error(s): {0}")]
     Api(String),
+
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+
+    #[error("Image error: {0}")]
+    Image(String),
 }
 
 impl Serialize for R2Error {
@@ -81,6 +89,10 @@ pub struct FolderListing {
     pub folders: Vec<String>,
 }
 
+const R2_THUMBNAIL_CACHE_MAX_BYTES: u64 = 300 * 1024 * 1024;
+const R2_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 12 * 1024 * 1024;
+const R2_THUMBNAIL_MAX_DIMENSION: u32 = 320;
+
 // ── Helper ─────────────────────────────────────────────────────────────────────
 
 fn api_errors_to_string(errors: &[CfError]) -> String {
@@ -89,6 +101,108 @@ fn api_errors_to_string(errors: &[CfError]) -> String {
         .map(|e| format!("[{}] {}", e.code, e.message))
         .collect::<Vec<_>>()
         .join("; ")
+}
+
+fn thumbnail_extension(url: &str, content_type: Option<&str>) -> &'static str {
+    if let Some(content_type) = content_type {
+        if content_type.contains("image/jpeg") {
+            return "jpg";
+        }
+        if content_type.contains("image/png") {
+            return "png";
+        }
+        if content_type.contains("image/webp") {
+            return "webp";
+        }
+        if content_type.contains("image/gif") {
+            return "gif";
+        }
+        if content_type.contains("image/avif") {
+            return "avif";
+        }
+        if content_type.contains("image/svg") {
+            return "svg";
+        }
+    }
+
+    let lower = url.to_ascii_lowercase();
+    if lower.contains(".jpg") || lower.contains(".jpeg") {
+        "jpg"
+    } else if lower.contains(".webp") {
+        "webp"
+    } else if lower.contains(".gif") {
+        "gif"
+    } else if lower.contains(".avif") {
+        "avif"
+    } else if lower.contains(".svg") {
+        "svg"
+    } else {
+        "png"
+    }
+}
+
+fn evict_thumbnail_cache(cache_dir: &std::path::Path) -> Result<(), R2Error> {
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(R2Error::Io(err)),
+    };
+
+    let mut files = Vec::new();
+    let mut total_size = 0_u64;
+
+    for entry in entries {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        if !metadata.is_file() {
+            continue;
+        }
+
+        let modified = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        let size = metadata.len();
+        total_size = total_size.saturating_add(size);
+        files.push((entry.path(), size, modified));
+    }
+
+    if total_size <= R2_THUMBNAIL_CACHE_MAX_BYTES {
+        return Ok(());
+    }
+
+    files.sort_by_key(|(_, _, modified)| *modified);
+    for (path, size, _) in files {
+        if total_size <= R2_THUMBNAIL_CACHE_MAX_BYTES {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total_size = total_size.saturating_sub(size);
+        }
+    }
+
+    Ok(())
+}
+
+fn thumbnail_bytes(
+    bytes: &[u8],
+    content_type: Option<&str>,
+    source_url: &str,
+) -> Result<(Vec<u8>, &'static str), R2Error> {
+    let content_type = content_type.unwrap_or_default().to_ascii_lowercase();
+    if content_type.contains("image/svg") || source_url.to_ascii_lowercase().contains(".svg") {
+        return Ok((bytes.to_vec(), "svg"));
+    }
+
+    let image = match image::load_from_memory(bytes) {
+        Ok(image) => image,
+        Err(_) => return Ok((bytes.to_vec(), thumbnail_extension(source_url, Some(&content_type)))),
+    };
+
+    let thumbnail = image.thumbnail(R2_THUMBNAIL_MAX_DIMENSION, R2_THUMBNAIL_MAX_DIMENSION);
+    let mut output = Cursor::new(Vec::new());
+    thumbnail
+        .write_to(&mut output, image::ImageFormat::Png)
+        .map_err(|err| R2Error::Image(err.to_string()))?;
+
+    Ok((output.into_inner(), "png"))
 }
 
 pub(crate) async fn resolve_account_id(client: &CloudflareClient) -> Result<String, R2Error> {
@@ -259,6 +373,88 @@ pub async fn list_r2_objects(bucket_name: String, prefix: String) -> Result<Fold
     folders_vec.sort();
 
     Ok(FolderListing { files, folders: folders_vec })
+}
+
+/// Caches a publicly accessible R2 image in the local app cache directory.
+/// The frontend passes a cache key containing account, bucket, object key and
+/// etag, so changed objects automatically create a new thumbnail cache file.
+#[tauri::command]
+pub async fn cache_r2_public_thumbnail(
+    app: tauri::AppHandle,
+    url: String,
+    cache_key: String,
+) -> Result<String, R2Error> {
+    let parsed = reqwest::Url::parse(&url)
+        .map_err(|_| R2Error::InvalidInput("Thumbnail URL is not valid.".to_string()))?;
+    if parsed.scheme() != "https" && parsed.scheme() != "http" {
+        return Err(R2Error::InvalidInput(
+            "Thumbnail URL must use http or https.".to_string(),
+        ));
+    }
+
+    let hash = format!("{:x}", md5::compute(cache_key.as_bytes()));
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| R2Error::InvalidInput(e.to_string()))?
+        .join("r2-thumbnails");
+
+    tokio::fs::create_dir_all(&cache_dir).await?;
+
+    for ext in ["jpg", "png", "webp", "gif", "avif", "svg"] {
+        let existing = cache_dir.join(format!("{hash}.{ext}"));
+        if existing.exists() {
+            return Ok(existing.to_string_lossy().to_string());
+        }
+    }
+
+    let resp = reqwest::Client::new().get(parsed).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        return Err(R2Error::Api(format!(
+            "Thumbnail request failed with HTTP {status}"
+        )));
+    }
+
+    if let Some(content_length) = resp.content_length() {
+        if content_length > R2_THUMBNAIL_MAX_SOURCE_BYTES {
+            return Err(R2Error::InvalidInput(
+                "Image is too large for thumbnail cache.".to_string(),
+            ));
+        }
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string());
+
+    if let Some(content_type) = content_type.as_deref() {
+        if !content_type.starts_with("image/") {
+            return Err(R2Error::InvalidInput(
+                "Thumbnail URL did not return an image.".to_string(),
+            ));
+        }
+    }
+
+    let bytes = resp.bytes().await?;
+    if bytes.len() as u64 > R2_THUMBNAIL_MAX_SOURCE_BYTES {
+        return Err(R2Error::InvalidInput(
+            "Image is too large for thumbnail cache.".to_string(),
+        ));
+    }
+
+    let (thumbnail, ext) = thumbnail_bytes(&bytes, content_type.as_deref(), &url)?;
+    let dest = cache_dir.join(format!("{hash}.{ext}"));
+    tokio::fs::write(&dest, &thumbnail).await?;
+
+    let cache_dir_for_evict = cache_dir.clone();
+    tokio::task::spawn_blocking(move || evict_thumbnail_cache(&cache_dir_for_evict))
+        .await
+        .map_err(|e| R2Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+
+    Ok(dest.to_string_lossy().to_string())
 }
 
 /// Deletes an object by key.

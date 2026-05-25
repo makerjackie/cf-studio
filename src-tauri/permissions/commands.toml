@@ -17,6 +17,7 @@ commands.allow = [
     "fetch_user_profile",
     "fetch_r2_buckets",
     "list_r2_objects",
+    "cache_r2_public_thumbnail",
     "delete_r2_object",
     "get_r2_bucket_domain",
     "fetch_cloudflare_zones",

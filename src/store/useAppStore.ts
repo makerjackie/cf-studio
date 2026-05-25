@@ -51,8 +51,12 @@ export function isCacheStale(lastFetched: number | null): boolean {
   return Date.now() - lastFetched > CACHE_TTL_MS;
 }
 
-export function r2ObjectListingCacheKey(bucketName: string, prefix: string): string {
-  return `${encodeURIComponent(bucketName)}::${encodeURIComponent(prefix)}`;
+export function r2ObjectListingCacheKey(accountId: string | null | undefined, bucketName: string, prefix: string): string {
+  return [
+    encodeURIComponent(accountId || "default"),
+    encodeURIComponent(bucketName),
+    encodeURIComponent(prefix),
+  ].join("::");
 }
 
 export interface R2ObjectListingCacheEntry {
