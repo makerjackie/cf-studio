@@ -11,6 +11,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { D1Database, CloudflareAccount } from "@/hooks/useCloudflare";
 import type { BucketDomainsInfo, FolderListing, R2Bucket } from "@/lib/r2";
+import type { R2SortDirection, R2SortField, R2ViewMode } from "@/lib/r2AssetUtils";
 
 export interface UserProfile {
   id: string;
@@ -104,6 +105,9 @@ interface AppState {
   language: AppLanguage;
   saveQueryResultsEnabled: boolean;
   saveQueryResultsRowLimit: number | null;
+  r2ViewMode: R2ViewMode;
+  r2SortField: R2SortField;
+  r2SortDirection: R2SortDirection;
 
   // ── Updater State ──
   updateStatus: "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
@@ -143,6 +147,8 @@ interface AppState {
   setLanguage: (language: AppLanguage) => void;
   setSaveQueryResultsEnabled: (enabled: boolean) => void;
   setSaveQueryResultsRowLimit: (limit: number | null) => void;
+  setR2ViewMode: (mode: R2ViewMode) => void;
+  setR2Sort: (field: R2SortField, direction: R2SortDirection) => void;
   setSessionId: (id: string) => void;
   refreshSession: () => void;
   
@@ -210,6 +216,9 @@ export const useAppStore = create<AppState>()(
       language: "en-US",
       saveQueryResultsEnabled: false,
       saveQueryResultsRowLimit: 50,
+      r2ViewMode: "list",
+      r2SortField: "name",
+      r2SortDirection: "asc",
       updateStatus: "idle",
       updateData: null,
       downloadProgress: 0,
@@ -238,6 +247,8 @@ export const useAppStore = create<AppState>()(
       setLanguage: (language) => set({ language }),
       setSaveQueryResultsEnabled: (enabled) => set({ saveQueryResultsEnabled: enabled }),
       setSaveQueryResultsRowLimit: (limit) => set({ saveQueryResultsRowLimit: limit }),
+      setR2ViewMode: (r2ViewMode) => set({ r2ViewMode }),
+      setR2Sort: (r2SortField, r2SortDirection) => set({ r2SortField, r2SortDirection }),
       setSessionId: (id) => set({ sessionId: id }),
       refreshSession: () => set({ sessionId: crypto.randomUUID() }),
       setUpdateStatus: (status) => set({ updateStatus: status }),
@@ -376,6 +387,9 @@ export const useAppStore = create<AppState>()(
         language: state.language,
         saveQueryResultsEnabled: state.saveQueryResultsEnabled,
         saveQueryResultsRowLimit: state.saveQueryResultsRowLimit,
+        r2ViewMode: state.r2ViewMode,
+        r2SortField: state.r2SortField,
+        r2SortDirection: state.r2SortDirection,
         databases: state.databases,
         kvNamespaces: state.kvNamespaces,
         r2Buckets: state.r2Buckets,

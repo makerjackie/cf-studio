@@ -148,6 +148,7 @@ fn fix_mac_quarantine() -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
@@ -200,6 +201,7 @@ pub fn run() {
             r2::delete_r2_object,
             r2::get_r2_bucket_domain,
             r2::cache_r2_public_thumbnail,
+            r2::cache_r2_object_preview,
             // ── R2 Pro (gated by remote config on the frontend) ──
             r2_pro::fetch_cloudflare_zones,
             r2_pro::create_r2_bucket,
@@ -209,6 +211,8 @@ pub fn run() {
             r2_pro::upload_r2_object_bytes,
             r2_pro::cancel_upload_r2_object,
             r2_pro::download_r2_object,
+            r2_pro::copy_r2_object,
+            r2_pro::move_r2_object,
             r2_pro::update_r2_bucket_managed_domain,
             r2_pro::add_r2_bucket_custom_domain,
             r2_pro::remove_r2_bucket_custom_domain,

@@ -26,7 +26,9 @@ pub enum R2Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Could not determine your Cloudflare account ID. Your account may not have API access.")]
+    #[error(
+        "Could not determine your Cloudflare account ID. Your account may not have API access."
+    )]
     NoAccountId,
 
     #[error("Cloudflare API error(s): {0}")]
@@ -92,6 +94,7 @@ pub struct FolderListing {
 const R2_THUMBNAIL_CACHE_MAX_BYTES: u64 = 300 * 1024 * 1024;
 const R2_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 12 * 1024 * 1024;
 const R2_THUMBNAIL_MAX_DIMENSION: u32 = 320;
+const R2_PREVIEW_MAX_SOURCE_BYTES: u64 = 50 * 1024 * 1024;
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
 
@@ -139,6 +142,24 @@ fn thumbnail_extension(url: &str, content_type: Option<&str>) -> &'static str {
     } else {
         "png"
     }
+}
+
+fn is_image_like(source: &str, content_type: Option<&str>) -> bool {
+    if content_type
+        .map(|value| value.to_ascii_lowercase().starts_with("image/"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    let lower = source.to_ascii_lowercase();
+    lower.ends_with(".avif")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".png")
+        || lower.ends_with(".svg")
+        || lower.ends_with(".webp")
 }
 
 fn evict_thumbnail_cache(cache_dir: &std::path::Path) -> Result<(), R2Error> {
@@ -193,7 +214,12 @@ fn thumbnail_bytes(
 
     let image = match image::load_from_memory(bytes) {
         Ok(image) => image,
-        Err(_) => return Ok((bytes.to_vec(), thumbnail_extension(source_url, Some(&content_type)))),
+        Err(_) => {
+            return Ok((
+                bytes.to_vec(),
+                thumbnail_extension(source_url, Some(&content_type)),
+            ))
+        }
     };
 
     let thumbnail = image.thumbnail(R2_THUMBNAIL_MAX_DIMENSION, R2_THUMBNAIL_MAX_DIMENSION);
@@ -232,7 +258,12 @@ pub(crate) async fn resolve_account_id(client: &CloudflareClient) -> Result<Stri
 pub async fn fetch_r2_buckets() -> Result<Vec<R2Bucket>, R2Error> {
     let creds = tokio::task::spawn_blocking(read_credentials)
         .await
-        .map_err(|e| R2Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
 
     let client = CloudflareClient::new(&creds.oauth_token)?;
     let account_id = match creds.account_id {
@@ -272,7 +303,9 @@ pub async fn fetch_r2_buckets() -> Result<Vec<R2Bucket>, R2Error> {
 
     if let Ok(gql_res) = gql_resp {
         if let Ok(data) = gql_res.json::<serde_json::Value>().await {
-            if let Some(groups) = data["data"]["viewer"]["accounts"][0]["r2StorageAdaptiveGroups"].as_array() {
+            if let Some(groups) =
+                data["data"]["viewer"]["accounts"][0]["r2StorageAdaptiveGroups"].as_array()
+            {
                 let mut stats_map = std::collections::HashMap::new();
                 for group in groups {
                     if let Some(bname) = group["dimensions"]["bucketName"].as_str() {
@@ -300,10 +333,18 @@ pub async fn fetch_r2_buckets() -> Result<Vec<R2Bucket>, R2Error> {
 
 /// Lists objects (files) and common prefixes (folders) at a specific prefix.
 #[tauri::command]
-pub async fn list_r2_objects(bucket_name: String, prefix: String) -> Result<FolderListing, R2Error> {
+pub async fn list_r2_objects(
+    bucket_name: String,
+    prefix: String,
+) -> Result<FolderListing, R2Error> {
     let creds = tokio::task::spawn_blocking(read_credentials)
         .await
-        .map_err(|e| R2Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
 
     let client = CloudflareClient::new(&creds.oauth_token)?;
     let account_id = match creds.account_id {
@@ -311,7 +352,10 @@ pub async fn list_r2_objects(bucket_name: String, prefix: String) -> Result<Fold
         None => resolve_account_id(&client).await?,
     };
 
-    let mut url = format!("accounts/{}/r2/buckets/{}/objects?delimiter=/", account_id, bucket_name);
+    let mut url = format!(
+        "accounts/{}/r2/buckets/{}/objects?delimiter=/",
+        account_id, bucket_name
+    );
     if !prefix.is_empty() {
         url = format!("{}&prefix={}", url, urlencoding::encode(&prefix));
     }
@@ -353,7 +397,10 @@ pub async fn list_r2_objects(bucket_name: String, prefix: String) -> Result<Fold
             files.push(R2Object {
                 key,
                 size: obj["size"].as_u64().unwrap_or(0),
-                uploaded: obj["last_modified"].as_str().unwrap_or(obj["uploaded"].as_str().unwrap_or("")).to_string(),
+                uploaded: obj["last_modified"]
+                    .as_str()
+                    .unwrap_or(obj["uploaded"].as_str().unwrap_or(""))
+                    .to_string(),
                 etag: obj["etag"].as_str().unwrap_or("").to_string(),
             });
         }
@@ -372,7 +419,10 @@ pub async fn list_r2_objects(bucket_name: String, prefix: String) -> Result<Fold
     let mut folders_vec: Vec<String> = folders.into_iter().collect();
     folders_vec.sort();
 
-    Ok(FolderListing { files, folders: folders_vec })
+    Ok(FolderListing {
+        files,
+        folders: folders_vec,
+    })
 }
 
 /// Caches a publicly accessible R2 image in the local app cache directory.
@@ -452,7 +502,138 @@ pub async fn cache_r2_public_thumbnail(
     let cache_dir_for_evict = cache_dir.clone();
     tokio::task::spawn_blocking(move || evict_thumbnail_cache(&cache_dir_for_evict))
         .await
-        .map_err(|e| R2Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// Downloads an authenticated R2 image object into the local app cache and
+/// stores a downsized preview. This lets private buckets be browsed visually
+/// without enabling a public r2.dev or custom-domain URL.
+#[tauri::command]
+pub async fn cache_r2_object_preview(
+    app: tauri::AppHandle,
+    bucket_name: String,
+    key: String,
+    cache_key: String,
+    max_dimension: u32,
+) -> Result<String, R2Error> {
+    let max_dimension = max_dimension.clamp(160, 2_400);
+    let hash = format!("{:x}", md5::compute(cache_key.as_bytes()));
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| R2Error::InvalidInput(e.to_string()))?
+        .join("r2-object-previews");
+
+    tokio::fs::create_dir_all(&cache_dir).await?;
+
+    for ext in ["jpg", "png", "webp", "gif", "avif", "svg"] {
+        let existing = cache_dir.join(format!("{hash}.{ext}"));
+        if existing.exists() {
+            return Ok(existing.to_string_lossy().to_string());
+        }
+    }
+
+    let creds = tokio::task::spawn_blocking(read_credentials)
+        .await
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
+
+    let client = CloudflareClient::new(&creds.oauth_token)?;
+    let account_id = match creds.account_id {
+        Some(id) => id,
+        None => resolve_account_id(&client).await?,
+    };
+
+    let url = format!(
+        "accounts/{}/r2/buckets/{}/objects/{}",
+        account_id,
+        bucket_name,
+        urlencoding::encode(&key)
+    );
+
+    let resp = client.get(&url).send().await?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(R2Error::Api(format!(
+            "Preview request failed with HTTP {status}: {text}"
+        )));
+    }
+
+    if let Some(content_length) = resp.content_length() {
+        if content_length > R2_PREVIEW_MAX_SOURCE_BYTES {
+            return Err(R2Error::InvalidInput(
+                "Image is too large for local preview.".to_string(),
+            ));
+        }
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string());
+
+    if !is_image_like(&key, content_type.as_deref()) {
+        return Err(R2Error::InvalidInput(
+            "R2 object is not an image preview target.".to_string(),
+        ));
+    }
+
+    let bytes = resp.bytes().await?;
+    if bytes.len() as u64 > R2_PREVIEW_MAX_SOURCE_BYTES {
+        return Err(R2Error::InvalidInput(
+            "Image is too large for local preview.".to_string(),
+        ));
+    }
+
+    let (preview, ext) = if content_type
+        .as_deref()
+        .map(|value| value.contains("image/svg"))
+        .unwrap_or(false)
+        || key.to_ascii_lowercase().ends_with(".svg")
+    {
+        (bytes.to_vec(), "svg")
+    } else {
+        match image::load_from_memory(&bytes) {
+            Ok(image) => {
+                let preview = image.thumbnail(max_dimension, max_dimension);
+                let mut output = Cursor::new(Vec::new());
+                preview
+                    .write_to(&mut output, image::ImageFormat::Png)
+                    .map_err(|err| R2Error::Image(err.to_string()))?;
+                (output.into_inner(), "png")
+            }
+            Err(_) => (
+                bytes.to_vec(),
+                thumbnail_extension(&key, content_type.as_deref()),
+            ),
+        }
+    };
+
+    let dest = cache_dir.join(format!("{hash}.{ext}"));
+    tokio::fs::write(&dest, &preview).await?;
+
+    let cache_dir_for_evict = cache_dir.clone();
+    tokio::task::spawn_blocking(move || evict_thumbnail_cache(&cache_dir_for_evict))
+        .await
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
 
     Ok(dest.to_string_lossy().to_string())
 }
@@ -462,7 +643,12 @@ pub async fn cache_r2_public_thumbnail(
 pub async fn delete_r2_object(bucket_name: String, key: String) -> Result<(), R2Error> {
     let creds = tokio::task::spawn_blocking(read_credentials)
         .await
-        .map_err(|e| R2Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
 
     let client = CloudflareClient::new(&creds.oauth_token)?;
     let account_id = match creds.account_id {
@@ -470,12 +656,14 @@ pub async fn delete_r2_object(bucket_name: String, key: String) -> Result<(), R2
         None => resolve_account_id(&client).await?,
     };
 
-    let url = format!("accounts/{}/r2/buckets/{}/objects/{}", account_id, bucket_name, urlencoding::encode(&key));
+    let url = format!(
+        "accounts/{}/r2/buckets/{}/objects/{}",
+        account_id,
+        bucket_name,
+        urlencoding::encode(&key)
+    );
 
-    let resp = client
-        .delete(&url)
-        .send()
-        .await?;
+    let resp = client.delete(&url).send().await?;
 
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
@@ -490,7 +678,12 @@ pub async fn delete_r2_object(bucket_name: String, key: String) -> Result<(), R2
 pub async fn get_r2_bucket_domain(bucket_name: String) -> Result<Option<String>, R2Error> {
     let creds = tokio::task::spawn_blocking(read_credentials)
         .await
-        .map_err(|e| R2Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+        .map_err(|e| {
+            R2Error::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            ))
+        })??;
 
     let client = CloudflareClient::new(&creds.oauth_token)?;
     let account_id = match creds.account_id {
@@ -499,7 +692,10 @@ pub async fn get_r2_bucket_domain(bucket_name: String) -> Result<Option<String>,
     };
 
     // First, check for custom domains
-    let custom_url = format!("accounts/{}/r2/buckets/{}/domains/custom", account_id, bucket_name);
+    let custom_url = format!(
+        "accounts/{}/r2/buckets/{}/domains/custom",
+        account_id, bucket_name
+    );
     if let Ok(resp) = client.get(&custom_url).send().await {
         if let Ok(data) = resp.json::<serde_json::Value>().await {
             if let Some(domains) = data["result"]["domains"].as_array() {
@@ -515,7 +711,10 @@ pub async fn get_r2_bucket_domain(bucket_name: String) -> Result<Option<String>,
     }
 
     // Fallback: check managed domain
-    let managed_url = format!("accounts/{}/r2/buckets/{}/domains/managed", account_id, bucket_name);
+    let managed_url = format!(
+        "accounts/{}/r2/buckets/{}/domains/managed",
+        account_id, bucket_name
+    );
     if let Ok(resp) = client.get(&managed_url).send().await {
         if let Ok(data) = resp.json::<serde_json::Value>().await {
             if data["result"]["enabled"].as_bool().unwrap_or(false) {

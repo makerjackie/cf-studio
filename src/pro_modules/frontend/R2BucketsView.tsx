@@ -1,23 +1,34 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { readImage, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   Box,
   CalendarDays,
+  CheckSquare2,
+  ChevronLeft,
+  ChevronRight,
   Clipboard,
   Copy,
   Download,
   Eye,
   File as FileIcon,
+  FileText,
   Folder,
   Globe2,
+  Grid2X2,
   ImageIcon,
+  Info,
+  List,
   Loader2,
+  Pencil,
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Square,
   Trash2,
   Upload,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,12 +47,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/components/ui/use-toast";
 import { useR2Buckets } from "@/hooks/useCloudflare";
 import {
+  cacheR2ObjectPreview,
   cacheR2PublicThumbnail,
+  copyR2Object,
   deleteR2Object,
   downloadR2Object,
   getR2BucketDomain,
   getR2BucketDomainsList,
   listR2Objects,
+  moveR2Object,
   uploadR2Object,
   uploadR2ObjectBytes,
   type BucketDomainsInfo,
@@ -52,6 +66,34 @@ import {
 import { cn, formatBytes } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import {
+  buildPreviewCacheKey,
+  buildPublicUrl,
+  buildThumbnailCacheKey,
+  buildUploadPrefix as makeUploadPrefix,
+  CopyFormat,
+  extensionForMime,
+  fileNameFromKey,
+  fileNameFromPath,
+  folderLabel,
+  folderPrefixForKey,
+  isImageObject,
+  markdownImage,
+  markdownImageLines,
+  nextAvailableKey,
+  objectLabel,
+  objectTypeLabel,
+  planUploadSources,
+  prepareUploadPlan,
+  publicUrlLines,
+  R2SortField,
+  selectedObjects,
+  sortR2Objects,
+  type ConflictPolicy,
+  type PlannedUpload,
+  type PreparedUpload,
+  type UploadSource,
+} from "@/lib/r2AssetUtils";
+import {
   isCacheStale,
   r2BucketDomainCacheKey,
   R2_BUCKET_DOMAIN_CACHE_TTL_MS,
@@ -59,31 +101,25 @@ import {
   useAppStore,
 } from "@/store/useAppStore";
 
-type CopyFormat = "url" | "markdown";
-type ConflictPolicy = "overwrite" | "rename" | "skip";
-
-interface PlannedUpload {
-  source: UploadSource;
-  key: string;
-  contentType?: string;
-}
-
-interface PreparedUpload {
-  source: UploadSource;
-  originalKey: string;
-  key: string;
-  contentType?: string;
-  skipped?: boolean;
-}
-
-interface UploadSource {
-  name: string;
-  file?: File;
-  localPath?: string;
-  contentType?: string;
-}
-
 const R2_PREFIX_PREFETCH_LIMIT = 4;
+
+type TransferStatus = "queued" | "running" | "done" | "failed";
+type ObjectActionMode = "copy" | "move";
+
+interface TransferItem {
+  id: string;
+  kind: "upload" | "download";
+  key: string;
+  label: string;
+  status: TransferStatus;
+  progress: number;
+  error?: string;
+}
+
+interface ObjectActionState {
+  mode: ObjectActionMode;
+  object: R2Object;
+}
 
 function BucketRow({
   bucket,
@@ -115,95 +151,13 @@ function BucketRow({
   );
 }
 
-function encodeR2Key(key: string) {
-  return key.split("/").map(encodeURIComponent).join("/");
-}
-
-function buildPublicUrl(domain: string | null, key: string) {
-  if (!domain) return null;
-  return `${domain.replace(/\/+$/, "")}/${encodeR2Key(key)}`;
-}
-
-function fileNameFromKey(key: string) {
-  return key.split("/").filter(Boolean).pop() || "r2-object";
-}
-
-function fileNameFromPath(path: string) {
-  return path.split(/[\\/]/).filter(Boolean).pop() || "r2-object";
-}
-
-function extensionForMime(type: string) {
-  const [, subtype = "png"] = type.split("/");
-  if (subtype === "jpeg") return "jpg";
-  if (subtype === "svg+xml") return "svg";
-  return subtype.split("+")[0] || "png";
-}
-
-function isImageObject(key: string) {
-  return /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(key);
-}
-
-function normalizePrefix(value: string) {
-  const trimmed = value.trim().replace(/^\/+/, "");
-  if (!trimmed) return "";
-  return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
-}
-
-function datePrefix() {
-  const now = new Date();
-  const year = String(now.getFullYear());
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}/${month}/${day}/`;
-}
-
-function folderPrefixForKey(key: string) {
-  const index = key.lastIndexOf("/");
-  return index >= 0 ? key.slice(0, index + 1) : "";
-}
-
-function splitFileName(name: string) {
-  const index = name.lastIndexOf(".");
-  if (index <= 0) return { base: name, ext: "" };
-  return { base: name.slice(0, index), ext: name.slice(index) };
-}
-
-function nextAvailableKey(key: string, existing: Set<string>, reserved: Set<string>) {
-  if (!existing.has(key) && !reserved.has(key)) return key;
-
-  const prefix = folderPrefixForKey(key);
-  const fileName = key.slice(prefix.length);
-  const { base, ext } = splitFileName(fileName);
-
-  for (let i = 1; i < 10_000; i += 1) {
-    const candidate = `${prefix}${base}-${i}${ext}`;
-    if (!existing.has(candidate) && !reserved.has(candidate)) {
-      return candidate;
-    }
-  }
-
-  return `${prefix}${base}-${Date.now()}${ext}`;
-}
-
-function objectLabel(key: string, prefix: string) {
-  return key.replace(prefix, "") || key;
-}
-
-function markdownImage(url: string, key: string) {
-  return `![${fileNameFromKey(key)}](${url})`;
-}
-
-function buildThumbnailCacheKey(accountId: string, bucketName: string, object: R2Object) {
-  return ["thumb-v1", accountId || "default", bucketName, object.key, object.etag || object.uploaded].join("::");
-}
-
 function domainLabel(domainsInfo: BucketDomainsInfo | null, publicDomain: string | null) {
   if (!domainsInfo) return null;
   const custom = Array.isArray(domainsInfo.custom) ? domainsInfo.custom : [];
   const activeCustom = custom.find((item) => item?.enabled && item?.domain);
-  if (activeCustom) return `Custom domain: ${activeCustom.domain}`;
+  if (activeCustom) return activeCustom.domain;
   if (domainsInfo.managed?.enabled && domainsInfo.managed?.domain) {
-    return `r2.dev: ${domainsInfo.managed.domain}`;
+    return domainsInfo.managed.domain;
   }
   return publicDomain ? publicDomain : null;
 }
@@ -215,14 +169,48 @@ function formatCacheTime(timestamp: number) {
   });
 }
 
+function formatObjectTime(value: string) {
+  if (!value) return "";
+  return new Date(value).toLocaleString();
+}
+
+function transferStatusKey(status: TransferStatus) {
+  if (status === "queued") return "r2.transfer.queued";
+  if (status === "running") return "r2.transfer.running";
+  if (status === "done") return "r2.transfer.done";
+  return "r2.transfer.failed";
+}
+
+async function clipboardImageToFile() {
+  const image = await readImage();
+  const size = await image.size();
+  const rgba = await image.rgba();
+  const canvas = document.createElement("canvas");
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is not available.");
+  context.putImageData(new ImageData(new Uint8ClampedArray(rgba), size.width, size.height), 0, 0);
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) throw new Error("Could not encode clipboard image.");
+  return new File([blob], `clipboard-${Date.now()}.png`, { type: "image/png" });
+}
+
 function R2Thumbnail({
+  accountScope,
+  bucketName,
+  object,
   publicUrl,
-  cacheKey,
   alt,
+  className,
 }: {
-  publicUrl: string;
-  cacheKey: string;
+  accountScope: string;
+  bucketName: string;
+  object: R2Object;
+  publicUrl: string | null;
   alt: string;
+  className?: string;
 }) {
   const [src, setSrc] = useState<string | null>(null);
 
@@ -230,7 +218,12 @@ function R2Thumbnail({
     let cancelled = false;
     setSrc(null);
 
-    cacheR2PublicThumbnail(publicUrl, cacheKey)
+    const cacheKey = buildThumbnailCacheKey(accountScope, bucketName, object);
+    const request = publicUrl
+      ? cacheR2PublicThumbnail(publicUrl, cacheKey)
+      : cacheR2ObjectPreview(bucketName, object.key, buildPreviewCacheKey(accountScope, bucketName, object, 320), 320);
+
+    request
       .then((path) => {
         if (!cancelled) setSrc(convertFileSrc(path));
       })
@@ -241,11 +234,11 @@ function R2Thumbnail({
     return () => {
       cancelled = true;
     };
-  }, [cacheKey, publicUrl]);
+  }, [accountScope, bucketName, object, publicUrl]);
 
   if (!src) {
     return (
-      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border bg-muted/40">
+      <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border bg-muted/40", className)}>
         <ImageIcon size={15} className="text-muted-foreground" />
       </span>
     );
@@ -255,8 +248,70 @@ function R2Thumbnail({
     <img
       src={src}
       alt={alt}
-      className="h-9 w-9 shrink-0 rounded-md border border-border object-cover"
+      className={cn("h-9 w-9 shrink-0 rounded-md border border-border object-cover", className)}
       loading="lazy"
+    />
+  );
+}
+
+function R2PreviewImage({
+  accountScope,
+  bucketName,
+  object,
+  publicUrl,
+}: {
+  accountScope: string;
+  bucketName: string;
+  object: R2Object;
+  publicUrl: string | null;
+}) {
+  const { t } = useI18n();
+  const [src, setSrc] = useState<string | null>(publicUrl);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+
+    if (publicUrl) {
+      setSrc(publicUrl);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setSrc(null);
+    cacheR2ObjectPreview(bucketName, object.key, buildPreviewCacheKey(accountScope, bucketName, object, 1600), 1600)
+      .then((path) => {
+        if (!cancelled) setSrc(convertFileSrc(path));
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accountScope, bucketName, object, publicUrl]);
+
+  if (failed) {
+    return <p className="text-sm text-destructive">{t("r2.previewFailed")}</p>;
+  }
+
+  if (!src) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 size={16} className="animate-spin" />
+        {t("r2.loadingPreview")}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={object.key}
+      className="max-h-[68vh] max-w-full rounded-md object-contain"
     />
   );
 }
@@ -272,6 +327,11 @@ export function R2BucketsView() {
   const setR2BucketDomain = useAppStore((s) => s.setR2BucketDomain);
   const activeAccount = useAppStore((s) => s.activeAccount);
   const cloudflareAccountId = useAppStore((s) => s.cloudflareAccountId);
+  const r2ViewMode = useAppStore((s) => s.r2ViewMode);
+  const r2SortField = useAppStore((s) => s.r2SortField);
+  const r2SortDirection = useAppStore((s) => s.r2SortDirection);
+  const setR2ViewMode = useAppStore((s) => s.setR2ViewMode);
+  const setR2Sort = useAppStore((s) => s.setR2Sort);
   const [selectedBucket, setSelectedBucket] = useState<R2Bucket | null>(null);
   const [prefix, setPrefix] = useState("");
   const [listing, setListing] = useState<FolderListing | null>(null);
@@ -288,22 +348,39 @@ export function R2BucketsView() {
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [previewObject, setPreviewObject] = useState<R2Object | null>(null);
+  const [detailObject, setDetailObject] = useState<R2Object | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [objectAction, setObjectAction] = useState<ObjectActionState | null>(null);
+  const [objectActionKey, setObjectActionKey] = useState("");
+  const [objectActionRunning, setObjectActionRunning] = useState(false);
   const [uploadPrefixInput, setUploadPrefixInput] = useState("");
   const [uploadNameOverride, setUploadNameOverride] = useState("");
   const [useDatePrefix, setUseDatePrefix] = useState(false);
   const [copyFormat, setCopyFormat] = useState<CopyFormat>("url");
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>("rename");
+  const [cacheControl, setCacheControl] = useState("");
 
   const buckets = state.status === "success" ? state.data : [];
   const currentDomainLabel = domainLabel(domainsInfo, publicDomain);
   const accountScope = activeAccount?.id || cloudflareAccountId || "default";
+  const filterText = objectFilter.trim().toLowerCase();
   const filteredFolders = (listing?.folders ?? []).filter((folder) =>
-    objectFilter.trim() ? folder.toLowerCase().includes(objectFilter.trim().toLowerCase()) : true
+    filterText ? folder.toLowerCase().includes(filterText) : true
   );
-  const filteredFiles = (listing?.files ?? []).filter((object) =>
-    objectFilter.trim() ? object.key.toLowerCase().includes(objectFilter.trim().toLowerCase()) : true
+  const filteredFiles = sortR2Objects(
+    (listing?.files ?? []).filter((object) =>
+      filterText ? object.key.toLowerCase().includes(filterText) : true
+    ),
+    r2SortField,
+    r2SortDirection
   );
+  const currentSelectedObjects = selectedObjects(listing?.files ?? [], selectedKeys);
+  const previewableFiles = filteredFiles.filter((object) => isImageObject(object.key));
+  const previewIndex = previewObject
+    ? previewableFiles.findIndex((object) => object.key === previewObject.key)
+    : -1;
 
   const loadObjects = useCallback(
     async (force = false) => {
@@ -390,6 +467,13 @@ export function R2BucketsView() {
   }, [loadObjects, selectedBucket]);
 
   useEffect(() => {
+    setSelectedKeys(new Set());
+    setDetailObject(null);
+    setPreviewObject(null);
+    setObjectAction(null);
+  }, [prefix, selectedBucket?.name]);
+
+  useEffect(() => {
     return () => {
       objectRequestIdRef.current += 1;
       domainRequestIdRef.current += 1;
@@ -468,7 +552,7 @@ export function R2BucketsView() {
 
   const tryCopyText = useCallback(async (value: string) => {
     try {
-      await navigator.clipboard.writeText(value);
+      await writeText(value, { label: "CF Studio" });
       return true;
     } catch (err) {
       console.warn("[CF Studio] Clipboard write failed:", err);
@@ -488,23 +572,31 @@ export function R2BucketsView() {
     [t, toast, tryCopyText]
   );
 
+  const addTransfer = useCallback((item: Omit<TransferItem, "id" | "status" | "progress">) => {
+    const id = crypto.randomUUID();
+    setTransfers((current) => [
+      {
+        id,
+        status: "queued",
+        progress: 0,
+        ...item,
+      },
+      ...current,
+    ]);
+    return id;
+  }, []);
+
+  const updateTransfer = useCallback((id: string, patch: Partial<TransferItem>) => {
+    setTransfers((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }, []);
+
   const buildUploadPrefix = useCallback(() => {
-    const basePrefix = normalizePrefix(uploadPrefixInput || prefix);
-    return `${basePrefix}${useDatePrefix ? datePrefix() : ""}`;
+    return makeUploadPrefix(prefix, uploadPrefixInput, useDatePrefix);
   }, [prefix, uploadPrefixInput, useDatePrefix]);
 
   const planUploads = useCallback(
     (sources: UploadSource[]): PlannedUpload[] => {
-      const uploadPrefix = buildUploadPrefix();
-      return sources.map((source) => {
-        const customName = sources.length === 1 ? uploadNameOverride.trim().replace(/^\/+/, "") : "";
-        const objectName = customName || source.name;
-        return {
-          source,
-          key: `${uploadPrefix}${objectName}`,
-          contentType: source.contentType,
-        };
-      });
+      return planUploadSources(sources, buildUploadPrefix(), uploadNameOverride);
     },
     [buildUploadPrefix, uploadNameOverride]
   );
@@ -548,23 +640,7 @@ export function R2BucketsView() {
         if (!confirmed) return [];
       }
 
-      const reserved = new Set<string>();
-      return plan
-        .map<PreparedUpload>((item) => {
-          const hasConflict = existing.has(item.key) || reserved.has(item.key);
-
-          if (hasConflict && conflictPolicy === "skip") {
-            return { ...item, originalKey: item.key, skipped: true };
-          }
-
-          const key = hasConflict && conflictPolicy === "rename"
-            ? nextAvailableKey(item.key, existing, reserved)
-            : nextAvailableKey(item.key, new Set(), reserved);
-
-          reserved.add(key);
-          return { ...item, originalKey: item.key, key };
-        })
-        .filter((item) => !item.skipped);
+      return prepareUploadPlan(plan, existing, conflictPolicy);
     },
     [conflictPolicy, fetchExistingKeys, t]
   );
@@ -610,14 +686,29 @@ export function R2BucketsView() {
         let copiedText: string | null = null;
 
         for (const item of preparedUploads) {
-          if (item.source.localPath) {
-            await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, crypto.randomUUID());
-          } else if (item.source.file) {
-            const buffer = await item.source.file.arrayBuffer();
-            const bytes = Array.from(new Uint8Array(buffer));
-            await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType);
-          } else {
-            continue;
+          const transferId = addTransfer({
+            kind: "upload",
+            key: item.key,
+            label: fileNameFromKey(item.key),
+          });
+
+          try {
+            updateTransfer(transferId, { status: "running", progress: 20 });
+            if (item.source.localPath) {
+              await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, crypto.randomUUID(), cacheControl.trim() || undefined);
+            } else if (item.source.file) {
+              const buffer = await item.source.file.arrayBuffer();
+              const bytes = Array.from(new Uint8Array(buffer));
+              updateTransfer(transferId, { progress: 45 });
+              await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType, cacheControl.trim() || undefined);
+            } else {
+              updateTransfer(transferId, { status: "failed", error: "Missing upload source." });
+              continue;
+            }
+            updateTransfer(transferId, { status: "done", progress: 100 });
+          } catch (err) {
+            updateTransfer(transferId, { status: "failed", progress: 100, error: String(err) });
+            throw err;
           }
 
           copiedUrl = buildPublicUrl(publicDomain, item.key);
@@ -653,6 +744,7 @@ export function R2BucketsView() {
     [
       conflictPolicy,
       copyFormat,
+      cacheControl,
       planUploads,
       prefetchR2Prefix,
       prefix,
@@ -663,6 +755,8 @@ export function R2BucketsView() {
       t,
       toast,
       tryCopyText,
+      addTransfer,
+      updateTransfer,
     ]
   );
 
@@ -704,23 +798,8 @@ export function R2BucketsView() {
 
   const uploadClipboardImage = useCallback(async () => {
     try {
-      if (!navigator.clipboard || !("read" in navigator.clipboard)) {
-        await openUploadDialog();
-        return;
-      }
-
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const imageType = item.types.find((type) => type.startsWith("image/"));
-        if (!imageType) continue;
-        const blob = await item.getType(imageType);
-        const ext = extensionForMime(imageType);
-        const file = new File([blob], `clipboard-${Date.now()}.${ext}`, { type: imageType });
-        await uploadFiles([file]);
-        return;
-      }
-
-      await openUploadDialog();
+      const file = await clipboardImageToFile();
+      await uploadFiles([file]);
     } catch (err) {
       console.warn("[CF Studio] Clipboard image read failed:", err);
       await openUploadDialog();
@@ -781,6 +860,156 @@ export function R2BucketsView() {
     }
   };
 
+  const openObjectAction = useCallback(
+    (mode: ObjectActionMode, object: R2Object) => {
+      const existingKeys = new Set((listing?.files ?? []).map((item) => item.key));
+      setObjectAction({ mode, object });
+      setObjectActionKey(
+        mode === "copy"
+          ? nextAvailableKey(object.key, existingKeys, new Set())
+          : object.key
+      );
+    },
+    [listing?.files]
+  );
+
+  const submitObjectAction = useCallback(async () => {
+    if (!selectedBucket || !objectAction) return;
+
+    const destinationKey = objectActionKey.trim().replace(/^\/+/, "");
+    if (!destinationKey) {
+      toast({ title: t("r2.destinationRequired"), variant: "destructive" });
+      return;
+    }
+    if (objectAction.mode === "move" && destinationKey === objectAction.object.key) {
+      toast({ title: t("r2.destinationSame"), variant: "destructive" });
+      return;
+    }
+
+    setObjectActionRunning(true);
+    try {
+      if (objectAction.mode === "copy") {
+        await copyR2Object(selectedBucket.name, objectAction.object.key, destinationKey);
+      } else {
+        await moveR2Object(selectedBucket.name, objectAction.object.key, destinationKey);
+        setDetailObject(null);
+        setPreviewObject((current) => (current?.key === objectAction.object.key ? null : current));
+        setSelectedKeys((current) => {
+          const next = new Set(current);
+          next.delete(objectAction.object.key);
+          return next;
+        });
+      }
+
+      await reloadObjects();
+      const destinationPrefix = folderPrefixForKey(destinationKey);
+      if (destinationPrefix !== prefix) {
+        prefetchR2Prefix(destinationPrefix);
+      }
+      toast({
+        title: objectAction.mode === "copy" ? t("r2.objectCopied") : t("r2.objectMoved"),
+        description: destinationKey,
+      });
+      setObjectAction(null);
+    } catch (err) {
+      toast({ title: t("r2.objectActionFailed"), description: String(err), variant: "destructive" });
+    } finally {
+      setObjectActionRunning(false);
+    }
+  }, [
+    objectAction,
+    objectActionKey,
+    prefix,
+    prefetchR2Prefix,
+    reloadObjects,
+    selectedBucket,
+    t,
+    toast,
+  ]);
+
+  const downloadObjectsToDirectory = useCallback(
+    async (objects: R2Object[]) => {
+      if (!selectedBucket || objects.length === 0) return;
+      const selected = await open({ directory: true, multiple: false });
+      const directory = Array.isArray(selected) ? selected[0] : selected;
+      if (!directory) return;
+
+      for (const object of objects) {
+        const transferId = addTransfer({
+          kind: "download",
+          key: object.key,
+          label: fileNameFromKey(object.key),
+        });
+        const destinationPath = `${directory.replace(/\/+$/, "")}/${fileNameFromKey(object.key)}`;
+
+        try {
+          updateTransfer(transferId, { status: "running", progress: 20 });
+          await downloadR2Object(selectedBucket.name, object.key, destinationPath);
+          updateTransfer(transferId, { status: "done", progress: 100 });
+        } catch (err) {
+          updateTransfer(transferId, { status: "failed", progress: 100, error: String(err) });
+        }
+      }
+    },
+    [addTransfer, selectedBucket, updateTransfer]
+  );
+
+  const toggleObjectSelection = useCallback((key: string) => {
+    setSelectedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelectedKeys((current) => {
+      if (filteredFiles.length > 0 && filteredFiles.every((object) => current.has(object.key))) {
+        const next = new Set(current);
+        filteredFiles.forEach((object) => next.delete(object.key));
+        return next;
+      }
+      const next = new Set(current);
+      filteredFiles.forEach((object) => next.add(object.key));
+      return next;
+    });
+  }, [filteredFiles]);
+
+  const deleteSelectedObjects = useCallback(async () => {
+    if (!selectedBucket || currentSelectedObjects.length === 0) return;
+    const confirmed = await ask(t("r2.deleteSelectedConfirm", { count: currentSelectedObjects.length }), {
+      title: t("r2.deleteSelected"),
+      kind: "warning",
+      okLabel: t("r2.delete"),
+      cancelLabel: t("common.cancel"),
+    });
+    if (!confirmed) return;
+
+    for (const object of currentSelectedObjects) {
+      await deleteR2Object(selectedBucket.name, object.key);
+    }
+    setSelectedKeys(new Set());
+    await reloadObjects();
+  }, [currentSelectedObjects, reloadObjects, selectedBucket, t]);
+
+  const copySelectedUrls = useCallback(async () => {
+    const value = publicUrlLines(currentSelectedObjects, publicDomain);
+    if (value) {
+      await copyText(value, t("r2.copyUrls"));
+    }
+  }, [copyText, currentSelectedObjects, publicDomain, t]);
+
+  const copySelectedMarkdown = useCallback(async () => {
+    const value = markdownImageLines(currentSelectedObjects, publicDomain);
+    if (value) {
+      await copyText(value, t("r2.copyMarkdown"));
+    }
+  }, [copyText, currentSelectedObjects, publicDomain, t]);
+
   const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragActive(false);
@@ -829,7 +1058,10 @@ export function R2BucketsView() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[260px_1fr] overflow-hidden rounded-lg border border-border">
+      <div className={cn(
+        "grid min-h-0 flex-1 overflow-hidden rounded-lg border border-border",
+        detailObject ? "grid-cols-[260px_1fr_320px]" : "grid-cols-[260px_1fr]"
+      )}>
         <aside className="min-h-0 border-r border-border bg-muted/20 p-2">
           {state.status === "loading" && <p className="p-3 text-sm text-muted-foreground">{t("r2.loadingBuckets")}</p>}
           {state.status === "error" && <p className="p-3 text-sm text-destructive">{state.message}</p>}
@@ -897,16 +1129,92 @@ export function R2BucketsView() {
             </div>
 
             <div className="border-t border-border/60 px-4 py-2">
-              <div className="relative">
-                <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={objectFilter}
-                  onChange={(event) => setObjectFilter(event.target.value)}
-                  placeholder={t("r2.filterObjects")}
-                  className="h-8 pl-8 text-sm"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-[220px] flex-1">
+                  <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={objectFilter}
+                    onChange={(event) => setObjectFilter(event.target.value)}
+                    placeholder={t("r2.filterObjects")}
+                    className="h-8 pl-8 text-sm"
+                  />
+                </div>
+                <div className="flex rounded-md border border-border p-0.5">
+                  <Button
+                    variant={r2ViewMode === "list" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setR2ViewMode("list")}
+                    title={t("r2.listView")}
+                  >
+                    <List size={13} />
+                  </Button>
+                  <Button
+                    variant={r2ViewMode === "grid" ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 px-2"
+                    onClick={() => setR2ViewMode("grid")}
+                    title={t("r2.gridView")}
+                  >
+                    <Grid2X2 size={13} />
+                  </Button>
+                </div>
+                <Select value={r2SortField} onValueChange={(value) => setR2Sort(value as R2SortField, r2SortDirection)}>
+                  <SelectTrigger className="h-8 w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">{t("r2.sortName")}</SelectItem>
+                    <SelectItem value="size">{t("r2.sortSize")}</SelectItem>
+                    <SelectItem value="updated">{t("r2.sortUpdated")}</SelectItem>
+                    <SelectItem value="type">{t("r2.sortType")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8"
+                  onClick={() => setR2Sort(r2SortField, r2SortDirection === "asc" ? "desc" : "asc")}
+                >
+                  {r2SortDirection === "asc" ? "A-Z" : "Z-A"}
+                </Button>
+                {filteredFiles.length > 0 && (
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5" onClick={selectAllVisible}>
+                    {filteredFiles.every((object) => selectedKeys.has(object.key)) ? <CheckSquare2 size={13} /> : <Square size={13} />}
+                    {t("r2.selectVisible")}
+                  </Button>
+                )}
               </div>
             </div>
+
+            {selectedKeys.size > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 bg-muted/25 px-4 py-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {t("r2.selectedCount", { count: currentSelectedObjects.length })}
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button variant="outline" size="sm" className="h-7" onClick={copySelectedUrls} disabled={!publicDomain}>
+                    <Copy size={12} className="mr-1.5" />
+                    {t("r2.copyUrls")}
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7" onClick={copySelectedMarkdown} disabled={!publicDomain}>
+                    <Clipboard size={12} className="mr-1.5" />
+                    {t("r2.copyMarkdown")}
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7" onClick={() => downloadObjectsToDirectory(currentSelectedObjects)}>
+                    <Download size={12} className="mr-1.5" />
+                    {t("r2.downloadSelected")}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-destructive" onClick={deleteSelectedObjects}>
+                    <Trash2 size={12} className="mr-1.5" />
+                    {t("r2.deleteSelected")}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSelectedKeys(new Set())}>
+                    <X size={12} />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="group flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2 text-xs">
               <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
@@ -971,8 +1279,8 @@ export function R2BucketsView() {
             </p>
           )}
           {objectsState === "idle" && selectedBucket && listing && (
-            <div className="divide-y divide-border">
-              {filteredFolders.map((folder) => (
+            <div className={cn(r2ViewMode === "list" ? "divide-y divide-border" : "p-4")}>
+              {r2ViewMode === "list" && filteredFolders.map((folder) => (
                 <button
                   key={folder}
                   onClick={() => setPrefix(folder)}
@@ -981,63 +1289,150 @@ export function R2BucketsView() {
                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-muted/50"
                 >
                   <Folder size={15} className="text-primary" />
-                  <span className="font-medium">{folder.replace(prefix, "")}</span>
+                  <span className="font-medium">{folderLabel(folder, prefix)}</span>
                 </button>
               ))}
-              {filteredFiles.map((object) => {
-                const publicUrl = buildPublicUrl(publicDomain, object.key);
-                const isImage = isImageObject(object.key);
+              {r2ViewMode === "grid" && (
+                <div className="mb-4 grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
+                  {filteredFolders.map((folder) => (
+                    <button
+                      key={folder}
+                      onClick={() => setPrefix(folder)}
+                      onMouseEnter={() => prefetchR2Prefix(folder)}
+                      onFocus={() => prefetchR2Prefix(folder)}
+                      className="flex aspect-[4/3] flex-col justify-between rounded-md border border-border bg-muted/20 p-3 text-left text-sm hover:bg-muted/50"
+                    >
+                      <Folder size={24} className="text-primary" />
+                      <span className="line-clamp-2 font-medium">{folderLabel(folder, prefix)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className={cn(r2ViewMode === "grid" && "grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-3")}>
+                {filteredFiles.map((object) => {
+                  const publicUrl = buildPublicUrl(publicDomain, object.key);
+                  const isImage = isImageObject(object.key);
+                  const checked = selectedKeys.has(object.key);
 
-                return (
-                  <div key={object.key} className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-muted/50">
-                    <div className="flex min-w-0 items-center gap-3">
-                      {isImage && publicUrl ? (
-                        <R2Thumbnail
-                          publicUrl={publicUrl}
-                          cacheKey={buildThumbnailCacheKey(accountScope, selectedBucket.name, object)}
-                          alt={objectLabel(object.key, prefix)}
-                        />
-                      ) : isImage ? (
-                        <ImageIcon size={15} className="shrink-0 text-muted-foreground" />
-                      ) : (
-                        <FileIcon size={15} className="shrink-0 text-muted-foreground" />
+                  if (r2ViewMode === "grid") {
+                    return (
+                      <div
+                        key={object.key}
+                        className={cn(
+                          "group relative overflow-hidden rounded-md border border-border bg-background hover:border-primary/40",
+                          detailObject?.key === object.key && "border-primary"
+                        )}
+                      >
+                        <button
+                          type="button"
+                          className="absolute left-2 top-2 z-10 rounded bg-background/90 p-1 shadow-sm"
+                          onClick={() => toggleObjectSelection(object.key)}
+                          title={checked ? t("r2.unselectObject") : t("r2.selectObject")}
+                        >
+                          {checked ? <CheckSquare2 size={14} className="text-primary" /> : <Square size={14} />}
+                        </button>
+                        <button
+                          type="button"
+                          className="block w-full text-left"
+                          onClick={() => {
+                            setDetailObject(object);
+                            if (isImage) setPreviewObject(object);
+                          }}
+                        >
+                          <div className="grid aspect-square place-items-center bg-muted/30">
+                            {isImage ? (
+                              <R2Thumbnail
+                                accountScope={accountScope}
+                                bucketName={selectedBucket.name}
+                                object={object}
+                                publicUrl={publicUrl}
+                                alt={objectLabel(object.key, prefix)}
+                                className="h-full w-full rounded-none border-0"
+                              />
+                            ) : (
+                              <FileIcon size={30} className="text-muted-foreground" />
+                            )}
+                          </div>
+                          <div className="space-y-1 p-2">
+                            <p className="line-clamp-2 text-xs font-medium">{objectLabel(object.key, prefix)}</p>
+                            <p className="text-[11px] text-muted-foreground">{formatBytes(object.size)}</p>
+                          </div>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={object.key}
+                      className={cn(
+                        "flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-muted/50",
+                        detailObject?.key === object.key && "bg-primary/5"
                       )}
-                      <div className="min-w-0">
-                        <p className="truncate font-medium">{objectLabel(object.key, prefix)}</p>
-                        <p className="text-xs text-muted-foreground">{formatBytes(object.size)}</p>
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleObjectSelection(object.key)}
+                          title={checked ? t("r2.unselectObject") : t("r2.selectObject")}
+                        >
+                          {checked ? <CheckSquare2 size={15} className="text-primary" /> : <Square size={15} className="text-muted-foreground" />}
+                        </button>
+                        {isImage ? (
+                          <R2Thumbnail
+                            accountScope={accountScope}
+                            bucketName={selectedBucket.name}
+                            object={object}
+                            publicUrl={publicUrl}
+                            alt={objectLabel(object.key, prefix)}
+                          />
+                        ) : (
+                          <FileIcon size={15} className="shrink-0 text-muted-foreground" />
+                        )}
+                        <button
+                          type="button"
+                          className="min-w-0 text-left"
+                          onClick={() => setDetailObject(object)}
+                        >
+                          <p className="truncate font-medium">{objectLabel(object.key, prefix)}</p>
+                          <p className="text-xs text-muted-foreground">{formatBytes(object.size)} · {objectTypeLabel(object.key)}</p>
+                        </button>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        {isImage && (
+                          <Button variant="ghost" size="icon" onClick={() => setPreviewObject(object)} title={t("r2.preview")}>
+                            <Eye size={14} />
+                          </Button>
+                        )}
+                        {publicUrl && (
+                          <Button variant="ghost" size="icon" onClick={() => copyText(publicUrl)} title={t("r2.copyUrl")}>
+                            <Copy size={14} />
+                          </Button>
+                        )}
+                        {publicUrl && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => copyText(markdownImage(publicUrl, object.key), t("r2.copyMarkdown"))}
+                            title={t("r2.copyMarkdown")}
+                          >
+                            <Clipboard size={14} />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => setDetailObject(object)} title={t("r2.details")}>
+                          <Info size={14} />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDownloadObject(object)} title={t("r2.download")}>
+                          <Download size={14} />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDeleteObject(object.key)} title={t("r2.delete")}>
+                          <Trash2 size={14} />
+                        </Button>
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      {isImage && publicUrl && (
-                        <Button variant="ghost" size="icon" onClick={() => setPreviewObject(object)} title={t("r2.preview")}>
-                          <Eye size={14} />
-                        </Button>
-                      )}
-                      {publicUrl && (
-                        <Button variant="ghost" size="icon" onClick={() => copyText(publicUrl)} title={t("r2.copyUrl")}>
-                          <Copy size={14} />
-                        </Button>
-                      )}
-                      {publicUrl && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => copyText(markdownImage(publicUrl, object.key), t("r2.copyMarkdown"))}
-                          title={t("r2.copyMarkdown")}
-                        >
-                          <Clipboard size={14} />
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="icon" onClick={() => handleDownloadObject(object)} title={t("r2.download")}>
-                        <Download size={14} />
-                      </Button>
-                      <Button variant="ghost" size="icon" onClick={() => handleDeleteObject(object.key)} title={t("r2.delete")}>
-                        <Trash2 size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
               {listing.folders.length === 0 && listing.files.length === 0 && (
                 <p className="p-4 text-sm text-muted-foreground">{t("r2.noObjects")}</p>
               )}
@@ -1047,7 +1442,134 @@ export function R2BucketsView() {
             </div>
           )}
         </section>
+        {detailObject && selectedBucket && (
+          <aside className="min-h-0 overflow-auto border-l border-border bg-muted/10">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-background px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{t("r2.details")}</p>
+                <p className="truncate text-xs text-muted-foreground">{fileNameFromKey(detailObject.key)}</p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDetailObject(null)}>
+                <X size={14} />
+              </Button>
+            </div>
+            <div className="space-y-4 p-4 text-sm">
+              {isImageObject(detailObject.key) && (
+                <div className="overflow-hidden rounded-md border border-border bg-background">
+                  <div className="grid aspect-video place-items-center bg-muted/30">
+                    <R2Thumbnail
+                      accountScope={accountScope}
+                      bucketName={selectedBucket.name}
+                      object={detailObject}
+                      publicUrl={buildPublicUrl(publicDomain, detailObject.key)}
+                      alt={detailObject.key}
+                      className="h-full w-full rounded-none border-0"
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t("r2.objectKey")}</Label>
+                <p className="break-all font-mono text-xs">{detailObject.key}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">{t("r2.size")}</Label>
+                  <p>{formatBytes(detailObject.size)}</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">{t("r2.type")}</Label>
+                  <p>{objectTypeLabel(detailObject.key)}</p>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">{t("r2.updated")}</Label>
+                <p>{formatObjectTime(detailObject.uploaded)}</p>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">ETag</Label>
+                <p className="break-all font-mono text-xs">{detailObject.etag || t("common.notAvailable")}</p>
+              </div>
+              {buildPublicUrl(publicDomain, detailObject.key) ? (
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">{t("r2.publicUrl")}</Label>
+                  <p className="break-all font-mono text-xs">{buildPublicUrl(publicDomain, detailObject.key)}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" onClick={() => copyText(buildPublicUrl(publicDomain, detailObject.key) || "")}>
+                      <Copy size={13} className="mr-1.5" />
+                      {t("r2.copyUrl")}
+                    </Button>
+                    {isImageObject(detailObject.key) && (
+                      <Button size="sm" variant="outline" onClick={() => copyText(markdownImage(buildPublicUrl(publicDomain, detailObject.key) || "", detailObject.key), t("r2.copyMarkdown"))}>
+                        <FileText size={13} className="mr-1.5" />
+                        {t("r2.copyMarkdown")}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="rounded-md border border-border bg-background p-3 text-xs text-muted-foreground">
+                  {t("r2.privatePreviewHint")}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {isImageObject(detailObject.key) && (
+                  <Button size="sm" onClick={() => setPreviewObject(detailObject)}>
+                    <Eye size={13} className="mr-1.5" />
+                    {t("r2.preview")}
+                  </Button>
+                )}
+                <Button size="sm" variant="outline" onClick={() => handleDownloadObject(detailObject)}>
+                  <Download size={13} className="mr-1.5" />
+                  {t("r2.download")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => openObjectAction("copy", detailObject)}>
+                  <Copy size={13} className="mr-1.5" />
+                  {t("r2.copyObject")}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => openObjectAction("move", detailObject)}>
+                  <Pencil size={13} className="mr-1.5" />
+                  {t("r2.moveObject")}
+                </Button>
+              </div>
+            </div>
+          </aside>
+        )}
       </div>
+
+      {transfers.length > 0 && (
+        <div className="rounded-lg border border-border bg-background">
+          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Upload size={14} />
+              {t("r2.transfers")}
+            </div>
+            <Button variant="ghost" size="sm" className="h-7" onClick={() => setTransfers((items) => items.filter((item) => item.status === "running" || item.status === "queued"))}>
+              {t("r2.clearCompleted")}
+            </Button>
+          </div>
+          <div className="max-h-36 overflow-auto divide-y divide-border">
+            {transfers.map((item) => (
+              <div key={item.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-3 py-2 text-xs">
+                {item.kind === "upload" ? <Upload size={13} className="text-muted-foreground" /> : <Download size={13} className="text-muted-foreground" />}
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{item.label}</p>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={cn("h-full bg-primary", item.status === "failed" && "bg-destructive")}
+                      style={{ width: `${item.progress}%` }}
+                    />
+                  </div>
+                  {item.error && <p className="mt-1 truncate text-destructive">{item.error}</p>}
+                </div>
+                <Badge variant={item.status === "failed" ? "destructive" : "secondary"} className="text-[10px]">
+                  {t(transferStatusKey(item.status))}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="max-w-2xl">
@@ -1116,24 +1638,112 @@ export function R2BucketsView() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="r2-cache-control" className="text-xs text-muted-foreground">
+                {t("r2.cacheControl")}
+              </Label>
+              <Input
+                id="r2-cache-control"
+                value={cacheControl}
+                onChange={(event) => setCacheControl(event.target.value)}
+                placeholder="public, max-age=31536000, immutable"
+                className="h-9 font-mono text-xs"
+              />
+            </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!objectAction} onOpenChange={(open) => !open && !objectActionRunning && setObjectAction(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {objectAction?.mode === "copy" ? t("r2.copyObject") : t("r2.moveObject")}
+            </DialogTitle>
+            <DialogDescription>{t("r2.objectActionDesc")}</DialogDescription>
+          </DialogHeader>
+          {objectAction && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">{t("r2.objectKey")}</Label>
+                <p className="break-all rounded-md border border-border bg-muted/30 p-2 font-mono text-xs">
+                  {objectAction.object.key}
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="r2-destination-key" className="text-xs text-muted-foreground">
+                  {t("r2.destinationKey")}
+                </Label>
+                <Input
+                  id="r2-destination-key"
+                  value={objectActionKey}
+                  onChange={(event) => setObjectActionKey(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      submitObjectAction();
+                    }
+                  }}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setObjectAction(null)} disabled={objectActionRunning}>
+                  {t("common.cancel")}
+                </Button>
+                <Button onClick={submitObjectAction} disabled={objectActionRunning}>
+                  {objectActionRunning && <Loader2 size={14} className="mr-2 animate-spin" />}
+                  {objectAction.mode === "copy" ? t("r2.copyObject") : t("r2.moveObject")}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!previewObject} onOpenChange={(open) => !open && setPreviewObject(null)}>
         <DialogContent className="max-w-4xl overflow-hidden p-0">
           <DialogTitle className="sr-only">{t("r2.preview")}</DialogTitle>
-          {previewObject && buildPublicUrl(publicDomain, previewObject.key) && (
+          {previewObject && selectedBucket && (
             <div className="flex max-h-[80vh] flex-col bg-background">
-              <div className="border-b border-border px-4 py-3">
-                <p className="truncate text-sm font-medium">{previewObject.key}</p>
-                <p className="text-xs text-muted-foreground">{formatBytes(previewObject.size)}</p>
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{previewObject.key}</p>
+                  <p className="text-xs text-muted-foreground">{formatBytes(previewObject.size)} · {formatObjectTime(previewObject.uploaded)}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={previewIndex <= 0}
+                    onClick={() => setPreviewObject(previewableFiles[previewIndex - 1])}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={previewIndex < 0 || previewIndex >= previewableFiles.length - 1}
+                    onClick={() => setPreviewObject(previewableFiles[previewIndex + 1])}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                  {buildPublicUrl(publicDomain, previewObject.key) && (
+                    <Button variant="ghost" size="icon" onClick={() => copyText(buildPublicUrl(publicDomain, previewObject.key) || "")}>
+                      <Copy size={15} />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" onClick={() => handleDownloadObject(previewObject)}>
+                    <Download size={15} />
+                  </Button>
+                </div>
               </div>
               <div className="flex min-h-0 items-center justify-center overflow-auto bg-muted/30 p-4">
-                <img
-                  src={buildPublicUrl(publicDomain, previewObject.key) ?? undefined}
-                  alt={previewObject.key}
-                  className="max-h-[68vh] max-w-full rounded-md object-contain"
+                <R2PreviewImage
+                  accountScope={accountScope}
+                  bucketName={selectedBucket.name}
+                  object={previewObject}
+                  publicUrl={buildPublicUrl(publicDomain, previewObject.key)}
                 />
               </div>
             </div>

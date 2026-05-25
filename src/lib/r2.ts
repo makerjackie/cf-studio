@@ -74,6 +74,20 @@ export async function cacheR2PublicThumbnail(url: string, cacheKey: string): Pro
   return invoke<string>("cache_r2_public_thumbnail", { url, cacheKey });
 }
 
+export async function cacheR2ObjectPreview(
+  bucketName: string,
+  key: string,
+  cacheKey: string,
+  maxDimension: number
+): Promise<string> {
+  return invokeCloudflare<string>("cache_r2_object_preview", {
+    bucketName,
+    key,
+    cacheKey,
+    maxDimension,
+  });
+}
+
 /**
  * Upload a local file to R2 directly.
  * @param bucketName - The target R2 bucket name.
@@ -84,22 +98,25 @@ export async function uploadR2Object(
   bucketName: string,
   key: string,
   localPath: string,
-  uploadId: string
+  uploadId: string,
+  cacheControl?: string
 ): Promise<void> {
-  return invokeCloudflare<void>("upload_r2_object", { bucketName, key, localPath, uploadId });
+  return invokeCloudflare<void>("upload_r2_object", { bucketName, key, localPath, uploadId, cacheControl });
 }
 
 export async function uploadR2ObjectBytes(
   bucketName: string,
   key: string,
   bytes: number[],
-  contentType?: string
+  contentType?: string,
+  cacheControl?: string
 ): Promise<void> {
   return invokeCloudflare<void>("upload_r2_object_bytes", {
     bucketName,
     key,
     bytes,
     contentType,
+    cacheControl,
   });
 }
 
@@ -139,6 +156,30 @@ export async function downloadR2Object(
     bucketName,
     key,
     destinationPath,
+  });
+}
+
+export async function copyR2Object(
+  bucketName: string,
+  sourceKey: string,
+  destinationKey: string
+): Promise<void> {
+  return invokeCloudflare<void>("copy_r2_object", {
+    bucketName,
+    sourceKey,
+    destinationKey,
+  });
+}
+
+export async function moveR2Object(
+  bucketName: string,
+  sourceKey: string,
+  destinationKey: string
+): Promise<void> {
+  return invokeCloudflare<void>("move_r2_object", {
+    bucketName,
+    sourceKey,
+    destinationKey,
   });
 }
 

@@ -1,4 +1,4 @@
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{CACHE_CONTROL, CONTENT_TYPE};
 use serde_json::{json, Value};
 
 use crate::cloudflare_auth::read_credentials;
@@ -110,6 +110,7 @@ pub async fn upload_r2_object(
     key: String,
     local_path: String,
     _upload_id: String,
+    cache_control: Option<String>,
 ) -> Result<(), String> {
     let bytes = tokio::fs::read(&local_path)
         .await
@@ -118,7 +119,7 @@ pub async fn upload_r2_object(
         .first_or_octet_stream()
         .to_string();
 
-    upload_r2_object_bytes(bucket_name, key, bytes, Some(content_type)).await
+    upload_r2_object_bytes(bucket_name, key, bytes, Some(content_type), cache_control).await
 }
 
 #[tauri::command]
@@ -127,6 +128,7 @@ pub async fn upload_r2_object_bytes(
     key: String,
     bytes: Vec<u8>,
     content_type: Option<String>,
+    cache_control: Option<String>,
 ) -> Result<(), String> {
     let (client, account_id) = client_and_account().await?;
     let url = format!(
@@ -139,13 +141,16 @@ pub async fn upload_r2_object_bytes(
             .to_string()
     });
 
-    let resp = client
+    let mut request = client
         .put(&url)
         .header(CONTENT_TYPE, content_type)
-        .body(bytes)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .body(bytes);
+
+    if let Some(cache_control) = cache_control.filter(|value| !value.trim().is_empty()) {
+        request = request.header(CACHE_CONTROL, cache_control);
+    }
+
+    let resp = request.send().await.map_err(|e| e.to_string())?;
 
     parse_empty_cf_response(resp, "Upload object").await
 }
@@ -194,6 +199,86 @@ pub async fn download_r2_object(
         .map_err(|e| format!("Failed to write destination file: {e}"))?;
 
     Ok(())
+}
+
+async fn read_r2_object_for_copy(
+    client: &CloudflareClient,
+    account_id: &str,
+    bucket_name: &str,
+    key: &str,
+) -> Result<(Vec<u8>, Option<String>, Option<String>), String> {
+    let url = format!(
+        "accounts/{account_id}/r2/buckets/{bucket_name}/objects/{}",
+        urlencoding::encode(key)
+    );
+
+    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let content_type = resp
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    let cache_control = resp
+        .headers()
+        .get(CACHE_CONTROL)
+        .and_then(|value| value.to_str().ok())
+        .map(ToOwned::to_owned);
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read source object: {e}"))?;
+
+    if !status.is_success() {
+        let text = String::from_utf8_lossy(&bytes);
+        return Err(format!(
+            "Read source object failed with HTTP {status}: {text}"
+        ));
+    }
+
+    Ok((bytes.to_vec(), content_type, cache_control))
+}
+
+#[tauri::command]
+pub async fn copy_r2_object(
+    bucket_name: String,
+    source_key: String,
+    destination_key: String,
+) -> Result<(), String> {
+    let destination_key = destination_key.trim().trim_start_matches('/').to_string();
+    if source_key.trim().is_empty() || destination_key.is_empty() {
+        return Err("Source and destination object keys are required.".to_string());
+    }
+    if source_key == destination_key {
+        return Err("Destination key must be different from the source key.".to_string());
+    }
+
+    let (client, account_id) = client_and_account().await?;
+    let (bytes, content_type, cache_control) =
+        read_r2_object_for_copy(&client, &account_id, &bucket_name, &source_key).await?;
+
+    upload_r2_object_bytes(
+        bucket_name,
+        destination_key,
+        bytes,
+        content_type,
+        cache_control,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn move_r2_object(
+    bucket_name: String,
+    source_key: String,
+    destination_key: String,
+) -> Result<(), String> {
+    let destination_key = destination_key.trim().trim_start_matches('/').to_string();
+    copy_r2_object(bucket_name.clone(), source_key.clone(), destination_key).await?;
+
+    crate::r2::delete_r2_object(bucket_name, source_key)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
