@@ -335,7 +335,7 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
           variant="ghost"
           size="sm"
           className="h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60"
-          onClick={() => open("https://github.com/mubashardev/cf-studio")}
+          onClick={() => open("https://github.com/makerjackie/cf-studio")}
         >
           <Github className="mr-2" size={14} />
           cf-studio

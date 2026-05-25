@@ -29,9 +29,12 @@ import {
   Sparkles,
   Wrench,
   History,
-  LogOut
+  LogOut,
+  KeyRound,
+  Trash2
 } from "lucide-react";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { open } from "@tauri-apps/plugin-shell";
 import appVersion from "../../package.json";
 import changelogsData from "../../changelogs/changelogs.json";
 import { Switch } from "@/components/ui/switch";
@@ -72,6 +75,11 @@ export function SettingsView() {
   const clearCache = useAppStore(s => s.clearCache);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [apiTokenInput, setApiTokenInput] = useState("");
+  const [accountIdInput, setAccountIdInput] = useState("");
+  const [savedTokenStatus, setSavedTokenStatus] = useState<{ has_token: boolean; has_account_id: boolean } | null>(null);
+  const [isSavingToken, setIsSavingToken] = useState(false);
+  const [isClearingToken, setIsClearingToken] = useState(false);
 
   const handleLogout = async () => {
     const confirmed = await ask(
@@ -120,6 +128,19 @@ export function SettingsView() {
   const { toast } = useToast();
   const { status, update, downloadProgress, error, checkForUpdates, downloadUpdate } = useUpdater();
 
+  const loadSavedTokenStatus = async () => {
+    try {
+      const nextStatus = await invoke<{ has_token: boolean; has_account_id: boolean }>("saved_cloudflare_api_token_status");
+      setSavedTokenStatus(nextStatus);
+    } catch (e) {
+      console.error("Failed to read saved token status", e);
+    }
+  };
+
+  useEffect(() => {
+    loadSavedTokenStatus();
+  }, []);
+
   // Show toast on update error
   useEffect(() => {
     if (error && status === "error") {
@@ -140,6 +161,64 @@ export function SettingsView() {
       console.error("Failed to refresh token", e);
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleSaveApiToken = async () => {
+    const token = apiTokenInput.trim();
+    if (!token) {
+      toast({
+        title: t("settings.apiTokenMissing"),
+        description: t("settings.apiTokenMissingDesc"),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSavingToken(true);
+    try {
+      await invoke("save_cloudflare_api_token", {
+        apiToken: token,
+        accountId: accountIdInput.trim() || null,
+      });
+      clearCache();
+      setApiTokenInput("");
+      await loadSavedTokenStatus();
+      toast({
+        title: t("settings.apiTokenSaved"),
+        description: t("settings.apiTokenSavedDesc"),
+      });
+      setTimeout(() => window.location.reload(), 600);
+    } catch (e) {
+      toast({
+        title: t("settings.apiTokenSaveFailed"),
+        description: String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingToken(false);
+    }
+  };
+
+  const handleClearSavedApiToken = async () => {
+    setIsClearingToken(true);
+    try {
+      await invoke("clear_saved_cloudflare_api_token");
+      clearCache();
+      await loadSavedTokenStatus();
+      toast({
+        title: t("settings.apiTokenCleared"),
+        description: t("settings.apiTokenClearedDesc"),
+      });
+      setTimeout(() => window.location.reload(), 600);
+    } catch (e) {
+      toast({
+        title: t("settings.apiTokenClearFailed"),
+        description: String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setIsClearingToken(false);
     }
   };
 
@@ -217,6 +296,80 @@ export function SettingsView() {
                       <RefreshCw className={cn("mr-2 h-3.5 w-3.5", isRefreshing && "animate-spin")} />
                       {t("settings.refreshToken")}
                     </Button>
+                  </div>
+
+                  <div className="space-y-4 p-5 border border-border/50 rounded-xl bg-background/50 backdrop-blur-sm">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-4">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                          <KeyRound size={20} />
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-semibold">{t("settings.manualApiToken")}</p>
+                            {savedTokenStatus?.has_token && (
+                              <Badge variant="secondary" className="text-[10px]">
+                                {t("settings.savedInKeychain")}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
+                            {t("settings.manualApiTokenDesc")}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => open("https://dash.cloudflare.com/profile/api-tokens")}
+                        className="h-8 shrink-0"
+                      >
+                        <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                        {t("settings.createToken")}
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-[1fr_220px_auto]">
+                      <Input
+                        type="password"
+                        value={apiTokenInput}
+                        onChange={(event) => setApiTokenInput(event.target.value)}
+                        placeholder={t("settings.apiTokenPlaceholder")}
+                        autoComplete="off"
+                        className="h-9"
+                      />
+                      <Input
+                        value={accountIdInput}
+                        onChange={(event) => setAccountIdInput(event.target.value)}
+                        placeholder={t("settings.accountIdOptional")}
+                        autoComplete="off"
+                        className="h-9 font-mono"
+                      />
+                      <Button size="sm" onClick={handleSaveApiToken} disabled={isSavingToken} className="h-9">
+                        {isSavingToken && <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                        {t("settings.saveToken")}
+                      </Button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-3">
+                      <p className="text-xs text-muted-foreground">
+                        {t("settings.tokenPermissionsHint")}
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleClearSavedApiToken}
+                        disabled={!savedTokenStatus?.has_token || isClearingToken}
+                        className="h-8"
+                      >
+                        {isClearingToken ? (
+                          <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        )}
+                        {t("settings.clearSavedToken")}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="grid gap-6 md:grid-cols-2">
@@ -802,7 +955,7 @@ export function SettingsView() {
                   </p>
                   
                   <div className="flex gap-4">
-                    <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://github.com/mubashardev/cf-studio")}>
+                    <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://github.com/makerjackie/cf-studio")}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       GitHub
                     </Button>

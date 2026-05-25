@@ -7,6 +7,9 @@ import appVersion from "../../package.json";
 
 export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
 
+const RELEASE_REPO = "makerjackie/cf-studio";
+const CHANGELOG_URL = `https://raw.githubusercontent.com/${RELEASE_REPO}/main/changelogs/changelogs.json`;
+
 export function useUpdater() {
   const status = useAppStore((s) => s.updateStatus);
   const update = useAppStore((s) => s.updateData);
@@ -24,7 +27,7 @@ export function useUpdater() {
     setError(null);
     try {
       // 1. Try manual check against changelogs.json for raw version notification (reliable)
-      const response = await fetch(`https://raw.githubusercontent.com/mubashardev/cf-studio/main/changelogs/changelogs.json?t=${Date.now()}`, {
+      const response = await fetch(`${CHANGELOG_URL}?t=${Date.now()}`, {
         cache: "no-store"
       });
       
@@ -91,7 +94,7 @@ export function useUpdater() {
           ].join("\n"),
           date: latestChangelog.date || "",
           isManualDetection: true,
-          installCommand: "curl -fsSL https://install.cfstudio.dev | bash"
+          installCommand: `https://github.com/${RELEASE_REPO}/releases/tag/v${latestChangelog.version}`
         } as any); // Cast to any because `isManualDetection` is not part of the official `Update` type
       } else {
         setStatus("up-to-date");
@@ -129,7 +132,7 @@ export function useUpdater() {
         console.log(`Resolving assets for v${ver} on ${isMac ? 'mac' : isWin ? 'win' : 'linux'} (${isArm ? 'arm64' : 'x64'})`);
 
         // Fetch release metadata to find exact asset names
-        const relResponse = await fetch(`https://api.github.com/repos/mubashardev/cf-studio/releases/tags/v${ver}`);
+        const relResponse = await fetch(`https://api.github.com/repos/${RELEASE_REPO}/releases/tags/v${ver}`);
         if (!relResponse.ok) {
            throw new Error(`Failed to fetch release metadata for v${ver}: ${relResponse.statusText}`);
         }
@@ -140,7 +143,7 @@ export function useUpdater() {
         let targetAsset = null;
         if (isMac) {
           // Look for .dmg with matching arch
-          targetAsset = assets.find((a: any) => a.name.endsWith('.dmg') && a.name.includes(isArm ? 'aarch64' : 'x64'));
+          targetAsset = assets.find((a: any) => a.name.endsWith('.dmg') && a.name.includes(isArm ? 'apple_silicon' : 'intel_chip'));
           // Fallback to any .dmg if arch-specific not found
           if (!targetAsset) targetAsset = assets.find((a: any) => a.name.endsWith('.dmg'));
         } else if (isWin) {

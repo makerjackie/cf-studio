@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.2.0",
   "author": "CF Studio",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

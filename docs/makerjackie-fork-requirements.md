@@ -1,176 +1,172 @@
 # MakerJackie CF Studio Fork Requirements
 
-## Goal
+## Product Positioning
 
-Create a lightweight MakerJackie fork of CF Studio for daily Cloudflare D1 and R2 work.
+This fork is a focused desktop companion for Cloudflare daily work. It is not a full Dashboard replacement.
 
-This fork is not trying to replace the Cloudflare dashboard. It should make repeated local desktop workflows faster, especially when the dashboard is slow or too heavy for a quick D1/R2 check.
+The strongest use case is fast local management for D1, R2, and KV when the Cloudflare Dashboard is too slow for repeated operational work.
 
-## Scope for this first pass
+## Current Implemented Scope
 
-1. Make the app reliably detect Node.js, npm, npx, and Wrangler when they are installed through nvm on macOS.
-2. Add a basic language system with English and Simplified Chinese support.
-3. Keep the public clone runnable without private Pro modules.
-4. Start the local Tauri app and verify the setup screen no longer blocks when nvm provides the tools.
+### Runtime and Auth
 
-## Non-goals
+- Detect Node.js, npm, npx, and Wrangler installed through nvm on macOS.
+- Prefer `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the process environment.
+- When launched from Finder, probe the user's login shell for Cloudflare environment variables.
+- Read the existing Wrangler OAuth config when no API token is available.
+- Allow users to paste a Cloudflare API token in Settings and store it in macOS Keychain.
+- Keep token storage runtime-only. Do not hardcode tokens, account IDs, bucket names, or user paths.
 
-- Do not build a full Cloudflare dashboard clone.
-- Do not depend on the new `cf` CLI as the backend.
-- Do not add full KV management in this pass.
-- Do not implement Local Explorer integration in this pass.
-- Do not rewrite the UI architecture.
+### R2
 
-## Background
+- List buckets and objects.
+- Upload files from file picker.
+- Upload files by drag and drop.
+- Upload images from clipboard.
+- Download objects.
+- Preview public images when a public domain is enabled.
+- Copy object public URLs.
+- Detect bucket public domain status by checking custom domains first, then managed `r2.dev`.
 
-Cloudflare's current tool split is:
+### Permissions
 
-- Wrangler remains the mature developer CLI.
-- Cloudflare Dashboard remains the complete remote management surface.
-- Local Explorer is useful for local Wrangler dev state, including local D1, R2, KV, Durable Objects SQLite, and Workflows.
-- The new `cf` CLI is promising but still a technical preview.
-- CF Studio is useful as a focused remote D1/R2 desktop client.
+- Add a Token Check page.
+- Verify read access for Account, D1, R2, and KV through real Cloudflare API calls.
+- Show required Edit permissions for write workflows without creating or modifying resources.
 
-The fork should lean into the focused desktop-client role.
+### i18n
 
-## Requirement 1, nvm-aware dependency detection
+- Keep English as the default language.
+- Add Simplified Chinese as an optional language.
+- Store locale text in separate files:
+  - `src/lib/i18n/en-US.ts`
+  - `src/lib/i18n/zh-CN.ts`
 
-### Problem
+### Release
 
-On macOS, Tauri apps launched from Finder do not reliably inherit the interactive shell PATH.
+- Build local macOS app and DMG through `bun run tauri build`.
+- Use the MakerJackie GitHub release endpoint for update checks.
+- GitHub Actions can build macOS, Windows, and Linux release artifacts from `main`.
 
-The user's terminal can resolve:
+## R2 Custom Domain Behavior
 
-```bash
-which node
-which wrangler
-```
+R2 buckets are private by default. CF Studio can only copy a working public URL when one of these is enabled:
 
-But the app may still report Node.js or Wrangler as missing.
+- A custom domain connected to the bucket.
+- The Cloudflare-managed `r2.dev` public development URL.
 
-### Expected behavior
+If no public domain is enabled, upload still succeeds, but the app should not pretend there is a public URL.
 
-When the app checks dependencies, it should detect binaries installed through nvm:
+## Recommended Token Permissions
 
-```txt
-~/.nvm/versions/node/*/bin/node
-~/.nvm/versions/node/*/bin/npm
-~/.nvm/versions/node/*/bin/npx
-~/.nvm/versions/node/*/bin/wrangler
-```
+For the current feature set:
 
-It should also check:
+- `Account:Read`
+- `D1:Read`
+- `D1:Edit`
+- `R2 Storage:Read`
+- `R2 Storage:Edit`
+- `Workers KV Storage:Read`
+- `Workers KV Storage:Edit`
 
-```txt
-~/.npm-global/bin
-/opt/homebrew/bin
-/usr/local/bin
-```
+The app should continue to explain missing permissions in product language instead of showing raw API failures only.
 
-### Implementation direction
+## Near-Term Requirements
 
-In Rust:
+### 1. Better Token Onboarding
 
-- Add a reusable shell environment helper.
-- Load `~/.nvm/nvm.sh` when present.
-- Prepend common nvm, npm-global, and Homebrew bin folders before probing commands.
-- Use the same shell bootstrap for silent Wrangler refresh commands.
+Goal: Make first-time setup understandable for non-technical users.
 
-### Acceptance checks
+Requirements:
 
-From a normal terminal:
+- If no environment token or Wrangler session is found, Settings should show a manual token card.
+- The card should link to Cloudflare's API token page.
+- The card should explain the minimum permissions needed for D1/R2/KV.
+- Saved tokens should live in OS secure storage, not localStorage.
+- Clearing the saved token should reload the app and fall back to environment variables or Wrangler.
 
-```bash
-npm run tauri dev
-```
+Acceptance:
 
-The setup wizard should mark Node.js / npm and Cloudflare Wrangler as installed when they exist under nvm.
+- A user who does not use terminal environment variables can still connect the app.
+- No token value is logged, committed, or displayed after save.
 
-## Requirement 2, basic i18n
+### 2. R2 Asset Manager
 
-### Problem
+Goal: Make R2 useful as a lightweight image hosting and asset library tool.
 
-The app is English-only. For personal daily use, the main navigation and setup/settings surfaces should support Chinese.
+Requirements:
 
-### Expected behavior
+- Upload multiple images.
+- Paste image from clipboard.
+- Copy direct URL after upload.
+- Copy Markdown image syntax.
+- Rename object key before upload.
+- Optional prefix selector, for example `images/`, `blog/`, `assets/`.
+- Basic conflict handling when the object key already exists.
 
-The app should include:
+Acceptance:
 
-- English, `en-US`
-- Simplified Chinese, `zh-CN`
-- A language selector in Settings
-- Persisted language preference in localStorage
+- Screenshot or copied image can be uploaded to R2 and pasted into a blog editor within one flow.
 
-### Initial translation scope
+### 3. D1 Practical Operations
 
-Translate only high-frequency surfaces in this pass:
+Goal: Move beyond read-only browsing into safe daily database operations.
 
-- Setup wizard
-- Sidebar navigation
-- Top title labels
-- Settings page headings and tabs
-- Common empty-state and coming-soon labels where easy
+Requirements:
 
-Do not try to translate every D1/R2 table cell and every Pro/hidden feature in the first pass.
+- Export table as CSV/JSON.
+- Create backup SQL dump.
+- Safer query execution warnings for destructive SQL.
+- Optional row edit UI for small tables.
+- Query templates for common inspection commands.
 
-## Requirement 3, public clone runnable
+Acceptance:
 
-### Problem
+- A small D1 database can be inspected, exported, and lightly edited without opening the Dashboard.
 
-The upstream repository imports `src/pro_modules`, but that folder is ignored and absent in a public clone.
+### 4. KV Manager
 
-### Expected behavior
+Goal: Fill the biggest missing storage surface.
 
-The MakerJackie fork should run locally without private Pro modules.
+Requirements:
 
-### Implementation direction
+- List namespaces.
+- Search keys by prefix.
+- View/edit values.
+- JSON formatting and validation.
+- Copy key/value.
+- Delete with confirmation.
 
-Add public fallback modules under `src/pro_modules` and adjust `.gitignore` so these fallback files are tracked.
+Acceptance:
 
-Fallback behavior:
+- Common KV debugging can be done without Dashboard.
 
-- Remote config defaults to disabled paid features.
-- R2 Buckets view remains usable for bucket listing and object listing with the public backend commands.
-- Pro-only actions show disabled state or a clear message.
-- Audit and query-history views render placeholder screens.
+### 5. Local Explorer Companion
 
-## Requirement 4, keep changes small
+Goal: Bridge Wrangler local state and remote resources.
 
-This first fork should stay close to upstream.
+Requirements:
 
-Avoid:
+- Detect local Wrangler dev projects.
+- Document how to open Cloudflare Local Explorer.
+- Explore whether `/cdn-cgi/explorer/api` can be used as an optional local data source.
+- Compare local and remote D1/R2/KV where safe.
 
-- Big design rewrites
-- Deep R2 upload/download refactors
-- New auth systems
-- `cf` CLI integration
-- Local Explorer integration
+Acceptance:
 
-## Future ideas
+- A developer can understand whether they are viewing local simulated data or remote Cloudflare data.
 
-Potential follow-up work:
+## Non-Goals
 
-- R2 image hosting workflow, upload, compress, copy Markdown URL
-- D1 local/remote diff
-- D1 seed and backup helpers
-- KV JSON search and editor
-- Cloudflare API token permission checker
-- Local Explorer API companion view
+- Do not clone the full Cloudflare Dashboard.
+- Do not depend on the new `cf` CLI while it is still technical preview.
+- Do not store Cloudflare API tokens in localStorage.
+- Do not auto-enable public R2 access without explicit user action.
+- Do not do destructive write-permission tests without user confirmation.
 
-## Verification
+## Open Decisions
 
-Run:
-
-```bash
-npm install
-npm run build
-npm run tauri dev
-```
-
-Expected result:
-
-- TypeScript build passes.
-- Rust build passes or surfaces only environment-specific toolchain issues.
-- App starts locally.
-- Setup wizard sees nvm-provided Node/npm/Wrangler.
-- Settings exposes language selection.
+- Whether to keep upstream branding or rename the fork for personal use.
+- Whether to ship only macOS releases or keep the cross-platform GitHub Actions matrix.
+- Whether the first public-facing release should be signed/notarized or kept as an unsigned personal build.
+- Whether custom domain creation should stay Dashboard-only or be exposed in app later.

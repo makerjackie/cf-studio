@@ -1,5 +1,19 @@
 [
   {
+    "version": "1.2.1",
+    "date": "2026-05-25",
+    "features": [
+      "Added R2 upload, download, image preview, public URL copying, and public domain status checks",
+      "Added Cloudflare token permission checks for D1, R2, and KV",
+      "Added manual Cloudflare API token storage through macOS Keychain",
+      "Moved English and Simplified Chinese translations into maintainable locale files"
+    ],
+    "fixes": [
+      "Improved Finder-launched macOS app environment detection for nvm, Wrangler, and Cloudflare token variables",
+      "Updated release metadata and updater checks for the makerjackie fork"
+    ]
+  },
+  {
     "version": "1.2.0",
     "date": "2026-04-14",
     "features": [
