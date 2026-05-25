@@ -42,13 +42,23 @@ import {
   type WorkerSummary,
   type WorkersOverview,
 } from "@/lib/remoteResources";
+import { summarizeWorkerMetricRows } from "@/lib/workerMetrics";
 import { cn } from "@/lib/utils";
 
 const WORKERS_DOCS_URL = "https://developers.cloudflare.com/workers/";
 const WORKERS_LOGS_DOCS_URL = "https://developers.cloudflare.com/workers/observability/logs/workers-logs/";
 const WORKERS_METRICS_DOCS_URL = "https://developers.cloudflare.com/workers/observability/metrics-and-analytics/";
 
-type FilterMode = "all" | "domains" | "routes" | "bindings" | "observability";
+type FilterMode = "all" | "errors" | "domains" | "routes" | "bindings" | "observability";
+
+const FILTER_LABELS: Record<FilterMode, string> = {
+  all: "all",
+  errors: "recent errors",
+  domains: "domains",
+  routes: "routes",
+  bindings: "bindings",
+  observability: "observability",
+};
 
 const METRIC_RANGES = [
   { label: "15m", minutes: 15 },
@@ -79,16 +89,6 @@ function getString(value: unknown, key: string): string | undefined {
 function getBool(value: unknown, key: string): boolean | undefined {
   const field = asRecord(value)[key];
   return typeof field === "boolean" ? field : undefined;
-}
-
-function getNumber(value: unknown, key: string): number {
-  const field = asRecord(value)[key];
-  if (typeof field === "number") return field;
-  if (typeof field === "string" && field.trim()) {
-    const parsed = Number(field);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
 }
 
 function getOptionalNumber(value: unknown, key: string): number | undefined {
@@ -161,34 +161,6 @@ function formatMicroseconds(value: number) {
   return `${value.toFixed(0)} us`;
 }
 
-function workerMetricsSummary(metrics: WorkerMetrics | null) {
-  const summary = {
-    requests: 0,
-    errors: 0,
-    subrequests: 0,
-    cpuP50: 0,
-    cpuP99: 0,
-    statuses: new Map<string, number>(),
-  };
-
-  for (const row of metrics?.rows ?? []) {
-    const sum = asRecord(row.sum);
-    const quantiles = asRecord(row.quantiles);
-    const dimensions = asRecord(row.dimensions);
-    const status = typeof dimensions.status === "string" ? dimensions.status : "unknown";
-    const requests = getNumber(sum, "requests");
-
-    summary.requests += requests;
-    summary.errors += getNumber(sum, "errors");
-    summary.subrequests += getNumber(sum, "subrequests");
-    summary.cpuP50 = Math.max(summary.cpuP50, getNumber(quantiles, "cpuTimeP50"));
-    summary.cpuP99 = Math.max(summary.cpuP99, getNumber(quantiles, "cpuTimeP99"));
-    summary.statuses.set(status, (summary.statuses.get(status) ?? 0) + requests);
-  }
-
-  return summary;
-}
-
 function SectionError({ section }: { section?: RemoteSection }) {
   if (!section?.error) return null;
   return (
@@ -221,6 +193,20 @@ function bindingLabel(binding: unknown) {
   return name ? `${type}: ${name}` : type;
 }
 
+function workerHealthBadge(worker: WorkerSummary) {
+  const metrics = worker.recent_metrics;
+  if (!metrics) {
+    return <Badge variant="outline">health unknown</Badge>;
+  }
+  if (metrics.errors > 0) {
+    return <Badge variant="destructive">{formatCompact(metrics.errors)} recent errors</Badge>;
+  }
+  if (metrics.requests > 0) {
+    return <Badge variant="secondary">healthy 1h</Badge>;
+  }
+  return <Badge variant="outline">no recent traffic</Badge>;
+}
+
 function WorkerListItem({
   worker,
   accountId,
@@ -237,6 +223,7 @@ function WorkerListItem({
   const primaryUrl = workerPrimaryUrl(worker);
   const bindingSummary = worker.bindings.slice(0, 3).map(bindingLabel);
   const extraBindings = Math.max(0, worker.bindings.length - bindingSummary.length);
+  const recentMetrics = worker.recent_metrics;
 
   return (
     <div
@@ -264,7 +251,13 @@ function WorkerListItem({
         <Badge variant={workerObservabilityEnabled === true ? "secondary" : "outline"}>
           {workerObservabilityEnabled === true ? "observability on" : "observability off"}
         </Badge>
+        {workerHealthBadge(worker)}
       </div>
+      {recentMetrics && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          1h requests {formatCompact(recentMetrics.requests)} · successes {formatCompact(Math.max(0, recentMetrics.requests - recentMetrics.errors))}
+        </p>
+      )}
       <div className="mt-3 grid gap-1">
         {bindingSummary.length === 0 ? (
           <p className="text-xs text-muted-foreground">No visible bindings.</p>
@@ -306,12 +299,18 @@ function WorkersSummaryPanel({ overview }: { overview: WorkersOverview | null })
   const domainCount = overview?.workers.reduce((sum, worker) => sum + worker.domains.length, 0) ?? 0;
   const routeCount = overview?.workers.reduce((sum, worker) => sum + worker.routes.length, 0) ?? 0;
   const bindingCount = overview?.workers.reduce((sum, worker) => sum + worker.bindings.length, 0) ?? 0;
+  const recentErrorCount = overview?.workers.reduce((sum, worker) => sum + (worker.recent_metrics?.errors ?? 0), 0) ?? 0;
+  const workersWithErrors = overview?.workers.filter((worker) => (worker.recent_metrics?.errors ?? 0) > 0).length ?? 0;
 
   return (
-    <div className="grid gap-3 md:grid-cols-4">
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
       <div className="rounded-lg border border-border bg-background p-4">
         <p className="text-2xl font-semibold">{overview?.workers.length ?? "—"}</p>
         <p className="mt-1 text-sm text-muted-foreground">Workers</p>
+      </div>
+      <div className="rounded-lg border border-border bg-background p-4">
+        <p className="text-2xl font-semibold">{formatCompact(recentErrorCount)}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{workersWithErrors} with recent errors</p>
       </div>
       <div className="rounded-lg border border-border bg-background p-4">
         <p className="text-2xl font-semibold">{domainCount}</p>
@@ -367,7 +366,7 @@ function WorkerDetailView({
   const [error, setError] = useState<string | null>(null);
 
   const workerName = detail ? (getString(detail.script, "id") ?? getString(detail.script, "name") ?? "worker") : "";
-  const metricSummary = useMemo(() => workerMetricsSummary(metrics), [metrics]);
+  const metricSummary = useMemo(() => summarizeWorkerMetricRows(metrics?.rows), [metrics]);
   const currentObservability = useMemo(() => observabilitySummary(observabilityRecord(detail)), [detail]);
 
   useEffect(() => {
@@ -748,6 +747,9 @@ function WorkerDetailView({
               <Badge variant={currentObservability.enabled === true ? "secondary" : "outline"}>
                 Observability {currentObservability.enabled === true ? "enabled" : "not enabled"}
               </Badge>
+              <Badge variant={metricSummary.errors > 0 ? "destructive" : "secondary"}>
+                {formatCompact(metricSummary.errors)} recent errors
+              </Badge>
               <Badge variant={deployments.length > 0 ? "secondary" : "outline"}>{deployments.length} deployments</Badge>
               <Badge variant={versions.length > 0 ? "secondary" : "outline"}>{versions.length} versions</Badge>
               <Badge variant={bindings.length > 0 ? "secondary" : "outline"}>{bindings.length} bindings</Badge>
@@ -794,10 +796,14 @@ function WorkerDetailView({
                 </div>
               )}
 
-              <div className="grid gap-3 md:grid-cols-5">
+              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Requests</p>
                   <p className="mt-1 text-xl font-semibold">{formatCompact(metricSummary.requests)}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Successes</p>
+                  <p className="mt-1 text-xl font-semibold">{formatCompact(metricSummary.successes)}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Errors</p>
@@ -808,6 +814,10 @@ function WorkerDetailView({
                   <p className="mt-1 text-xl font-semibold">
                     {metricSummary.requests > 0 ? formatPercent((metricSummary.errors / metricSummary.requests) * 100) : "0%"}
                   </p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">CPU P50</p>
+                  <p className="mt-1 text-xl font-semibold">{formatMicroseconds(metricSummary.cpuP50)}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">CPU P99</p>
@@ -1275,6 +1285,7 @@ export function WorkersView({ onNavigate }: WorkersViewProps) {
       const matchesQuery = !lowerQuery || worker.name.toLowerCase().includes(lowerQuery);
       const matchesFilter =
         filter === "all" ||
+        (filter === "errors" && (worker.recent_metrics?.errors ?? 0) > 0) ||
         (filter === "domains" && worker.domains.length > 0) ||
         (filter === "routes" && worker.routes.length > 0) ||
         (filter === "bindings" && worker.bindings.length > 0) ||
@@ -1314,6 +1325,11 @@ export function WorkersView({ onNavigate }: WorkersViewProps) {
           {overview.subdomain_error || overview.domains_error}
         </div>
       )}
+      {overview?.metrics_error && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700">
+          Recent Worker health metrics could not be loaded. The token may need Account Analytics read access.
+        </div>
+      )}
 
       <WorkersSummaryPanel overview={overview} />
 
@@ -1332,14 +1348,14 @@ export function WorkersView({ onNavigate }: WorkersViewProps) {
               </div>
             </form>
             <div className="mt-3 flex flex-wrap gap-2">
-              {(["all", "domains", "routes", "bindings", "observability"] as FilterMode[]).map((item) => (
+              {(["all", "errors", "domains", "routes", "bindings", "observability"] as FilterMode[]).map((item) => (
                 <Button
                   key={item}
                   size="sm"
                   variant={filter === item ? "default" : "outline"}
                   onClick={() => setFilter(item)}
                 >
-                  {item}
+                  {FILTER_LABELS[item]}
                 </Button>
               ))}
             </div>

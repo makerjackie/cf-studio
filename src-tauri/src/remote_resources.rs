@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, HashMap};
+
 use reqwest::{header::CONTENT_TYPE, multipart};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -74,6 +76,7 @@ pub struct WorkersOverview {
     pub account_subdomain: Option<String>,
     pub subdomain_error: Option<String>,
     pub domains_error: Option<String>,
+    pub metrics_error: Option<String>,
     pub workers: Vec<WorkerSummary>,
 }
 
@@ -88,7 +91,24 @@ pub struct WorkerSummary {
     pub domains: Vec<Value>,
     pub bindings: Vec<Value>,
     pub observability: Option<Value>,
+    pub recent_metrics: Option<WorkerHealthSummary>,
     pub raw: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkerStatusSummary {
+    pub status: String,
+    pub requests: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WorkerHealthSummary {
+    pub start: String,
+    pub end: String,
+    pub requests: u64,
+    pub errors: u64,
+    pub subrequests: u64,
+    pub statuses: Vec<WorkerStatusSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -260,6 +280,20 @@ fn value_string(value: &Value, field: &str) -> Option<String> {
         .map(ToString::to_string)
 }
 
+fn value_u64(value: &Value, field: &str) -> u64 {
+    value
+        .get(field)
+        .and_then(|field| {
+            field.as_u64().or_else(|| {
+                field
+                    .as_f64()
+                    .filter(|number| number.is_finite() && *number >= 0.0)
+                    .map(|number| number as u64)
+            })
+        })
+        .unwrap_or(0)
+}
+
 fn account_workers_dev_url(account_subdomain: Option<&str>, script_name: &str) -> Option<String> {
     account_subdomain.map(|subdomain| format!("https://{script_name}.{subdomain}.workers.dev"))
 }
@@ -282,6 +316,7 @@ fn worker_from_script(
     script: Value,
     account_subdomain: Option<&str>,
     domains: &[Value],
+    recent_metrics: Option<WorkerHealthSummary>,
 ) -> Option<WorkerSummary> {
     let name = value_string(&script, "id").or_else(|| value_string(&script, "name"))?;
     Some(WorkerSummary {
@@ -294,8 +329,136 @@ fn worker_from_script(
         domains: domains_for_script(domains, &name),
         bindings: value_array(&script, "bindings"),
         observability: script.get("observability").cloned(),
+        recent_metrics,
         raw: script,
     })
+}
+
+fn empty_worker_health(start: &str, end: &str) -> WorkerHealthSummary {
+    WorkerHealthSummary {
+        start: start.to_string(),
+        end: end.to_string(),
+        requests: 0,
+        errors: 0,
+        subrequests: 0,
+        statuses: Vec::new(),
+    }
+}
+
+async fn fetch_workers_recent_health(
+    client: &CloudflareClient,
+    account_id: &str,
+    minutes: u32,
+) -> Result<(String, String, HashMap<String, WorkerHealthSummary>), RemoteResourceError> {
+    let safe_minutes = minutes.clamp(15, 60 * 24 * 7);
+    let end = chrono::Utc::now();
+    let start = end - chrono::Duration::minutes(safe_minutes as i64);
+    let start_string = start.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let end_string = end.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+    let query = r#"
+        query GetWorkersOverviewHealth(
+          $accountTag: string,
+          $datetimeStart: string,
+          $datetimeEnd: string
+        ) {
+          viewer {
+            accounts(filter: { accountTag: $accountTag }) {
+              workersInvocationsAdaptive(
+                limit: 1000,
+                filter: {
+                  datetime_geq: $datetimeStart,
+                  datetime_leq: $datetimeEnd
+                }
+              ) {
+                sum {
+                  subrequests
+                  requests
+                  errors
+                }
+                dimensions {
+                  scriptName
+                  status
+                }
+              }
+            }
+          }
+        }
+    "#;
+
+    let response = client
+        .post("graphql")
+        .json(&json!({
+            "query": query,
+            "variables": {
+                "accountTag": account_id,
+                "datetimeStart": start_string,
+                "datetimeEnd": end_string,
+            }
+        }))
+        .send()
+        .await?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(RemoteResourceError::Api(format!("HTTP {status}: {text}")));
+    }
+
+    let raw: Value = serde_json::from_str(&text).map_err(|err| {
+        RemoteResourceError::Api(format!(
+            "Failed to parse Cloudflare GraphQL response: {err}. Body: {text}"
+        ))
+    })?;
+
+    if let Some(errors) = raw.get("errors").and_then(Value::as_array) {
+        if !errors.is_empty() {
+            return Err(RemoteResourceError::Api(format!(
+                "Cloudflare GraphQL error(s): {}",
+                serde_json::to_string(errors).unwrap_or_else(|_| "unknown error".to_string())
+            )));
+        }
+    }
+
+    let mut summaries: HashMap<String, WorkerHealthSummary> = HashMap::new();
+    let rows = raw
+        .pointer("/data/viewer/accounts/0/workersInvocationsAdaptive")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    for row in rows {
+        let dimensions = row.get("dimensions").unwrap_or(&Value::Null);
+        let Some(script_name) = value_string(dimensions, "scriptName") else {
+            continue;
+        };
+        let status = value_string(dimensions, "status").unwrap_or_else(|| "unknown".to_string());
+        let sum = row.get("sum").unwrap_or(&Value::Null);
+        let requests = value_u64(sum, "requests");
+        let errors = value_u64(sum, "errors");
+        let subrequests = value_u64(sum, "subrequests");
+
+        let entry = summaries
+            .entry(script_name)
+            .or_insert_with(|| empty_worker_health(&start_string, &end_string));
+        entry.requests = entry.requests.saturating_add(requests);
+        entry.errors = entry.errors.saturating_add(errors);
+        entry.subrequests = entry.subrequests.saturating_add(subrequests);
+
+        let mut status_counts = entry
+            .statuses
+            .iter()
+            .map(|item| (item.status.clone(), item.requests))
+            .collect::<BTreeMap<_, _>>();
+        let current = status_counts.get(&status).copied().unwrap_or(0);
+        status_counts.insert(status, current.saturating_add(requests));
+        entry.statuses = status_counts
+            .into_iter()
+            .map(|(status, requests)| WorkerStatusSummary { status, requests })
+            .collect();
+    }
+
+    Ok((start_string, end_string, summaries))
 }
 
 #[tauri::command]
@@ -513,9 +676,28 @@ pub async fn fetch_workers_overview() -> Result<WorkersOverview, RemoteResourceE
         .cloned()
         .unwrap_or_default();
 
+    let (health_window, mut health_by_script, metrics_error) =
+        match fetch_workers_recent_health(&client, &account_id, 60).await {
+            Ok((start, end, summaries)) => (Some((start, end)), summaries, None),
+            Err(err) => (None, HashMap::new(), Some(err.to_string())),
+        };
+
     let workers = scripts
         .into_iter()
-        .filter_map(|script| worker_from_script(script, account_subdomain.as_deref(), &domains))
+        .filter_map(|script| {
+            let name = value_string(&script, "id").or_else(|| value_string(&script, "name"))?;
+            let recent_metrics = health_by_script.remove(&name).or_else(|| {
+                health_window
+                    .as_ref()
+                    .map(|(start, end)| empty_worker_health(start, end))
+            });
+            worker_from_script(
+                script,
+                account_subdomain.as_deref(),
+                &domains,
+                recent_metrics,
+            )
+        })
         .collect();
 
     Ok(WorkersOverview {
@@ -523,6 +705,7 @@ pub async fn fetch_workers_overview() -> Result<WorkersOverview, RemoteResourceE
         account_subdomain,
         subdomain_error: subdomain_section.error,
         domains_error: domains_section.error,
+        metrics_error,
         workers,
     })
 }

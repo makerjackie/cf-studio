@@ -129,6 +129,8 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
 
   const workerDomainCount = workers?.workers.reduce((sum, worker) => sum + worker.domains.length + worker.routes.length, 0) ?? 0;
   const boundWorkers = workers?.workers.filter((worker) => worker.bindings.length > 0).length ?? 0;
+  const workerRecentErrors = workers?.workers.reduce((sum, worker) => sum + (worker.recent_metrics?.errors ?? 0), 0) ?? 0;
+  const workersWithRecentErrors = workers?.workers.filter((worker) => (worker.recent_metrics?.errors ?? 0) > 0).length ?? 0;
 
   return (
     <div className="flex h-full flex-col gap-6">
@@ -183,7 +185,13 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
           onClick={() => onNavigate("d1")}
         />
         <CountTile icon={KeyRound} label="KV namespaces" count={kv.length} onClick={() => onNavigate("kv")} />
-        <CountTile icon={Workflow} label="Workers" count={workers?.workers.length ?? "—"} onClick={() => onNavigate("workers")} />
+        <CountTile
+          icon={Workflow}
+          label="Workers"
+          count={workers?.workers.length ?? "—"}
+          status={workerRecentErrors > 0 ? `${workerRecentErrors} errors` : undefined}
+          onClick={() => onNavigate("workers")}
+        />
         <CountTile icon={MessageSquare} label="Queues" count={queues?.queues.length ?? "—"} onClick={() => onNavigate("queues")} />
         <CountTile icon={ShieldCheck} label="Token check" count="Open" onClick={() => onNavigate("permissions")} />
       </section>
@@ -219,6 +227,9 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
                     {worker.domains.length > 0 && <Badge variant="secondary">domain</Badge>}
                     {worker.routes.length > 0 && <Badge variant="secondary">route</Badge>}
                     {worker.bindings.length > 0 && <Badge variant="outline">bindings</Badge>}
+                    {(worker.recent_metrics?.errors ?? 0) > 0 && (
+                      <Badge variant="destructive">{worker.recent_metrics?.errors} errors</Badge>
+                    )}
                   </div>
                 </button>
               ))
@@ -238,6 +249,14 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
           <RiskItem
             title={`${boundWorkers} Workers with visible bindings`}
             body="Bindings connect Workers to D1, R2, KV, Queues, and other resources. Use the detail page to inspect missing permissions or unresolved resources."
+          />
+          <RiskItem
+            title={`${workerRecentErrors} recent Worker errors`}
+            body={
+              workers?.metrics_error
+                ? "Worker health metrics need Account Analytics read access. Resource lists still load without treating the Worker as unhealthy."
+                : `${workersWithRecentErrors} Workers reported errors in the last hour. Open Workers to filter and inspect them.`
+            }
           />
         </div>
       </section>

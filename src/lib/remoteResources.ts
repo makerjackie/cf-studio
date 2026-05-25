@@ -39,7 +39,22 @@ export interface WorkerSummary {
   domains: unknown[];
   bindings: unknown[];
   observability?: unknown;
+  recent_metrics?: WorkerHealthSummary | null;
   raw: Record<string, unknown>;
+}
+
+export interface WorkerStatusSummary {
+  status: string;
+  requests: number;
+}
+
+export interface WorkerHealthSummary {
+  start: string;
+  end: string;
+  requests: number;
+  errors: number;
+  subrequests: number;
+  statuses: WorkerStatusSummary[];
 }
 
 export interface WorkersOverview {
@@ -47,6 +62,7 @@ export interface WorkersOverview {
   account_subdomain?: string;
   subdomain_error?: string;
   domains_error?: string;
+  metrics_error?: string;
   workers: WorkerSummary[];
 }
 

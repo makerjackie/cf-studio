@@ -201,7 +201,10 @@ pub async fn upload_r2_object(
     let stream = FramedRead::new(file, BytesCodec::new()).map(move |chunk| {
         let chunk = chunk?;
         if is_upload_cancelled(&stream_upload_id) {
-            return Err(io::Error::new(io::ErrorKind::Interrupted, "Upload canceled."));
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Upload canceled.",
+            ));
         }
         bytes_sent += chunk.len() as u64;
         emit_upload_progress(
@@ -241,7 +244,14 @@ pub async fn upload_r2_object(
 
     let result = parse_empty_cf_response(resp, "Upload object").await;
     if result.is_ok() {
-        emit_upload_progress(&app, &upload_id, &bucket_name, &key, total_bytes, total_bytes);
+        emit_upload_progress(
+            &app,
+            &upload_id,
+            &bucket_name,
+            &key,
+            total_bytes,
+            total_bytes,
+        );
     }
     clear_cancelled_upload(&upload_id);
     result
