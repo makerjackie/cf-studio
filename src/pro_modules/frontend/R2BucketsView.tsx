@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
-import { ask, save } from "@tauri-apps/plugin-dialog";
+import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   Box,
@@ -15,13 +15,14 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Trash2,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -31,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { useR2Buckets } from "@/hooks/useCloudflare";
 import {
@@ -40,6 +42,7 @@ import {
   getR2BucketDomain,
   getR2BucketDomainsList,
   listR2Objects,
+  uploadR2Object,
   uploadR2ObjectBytes,
   type BucketDomainsInfo,
   type FolderListing,
@@ -50,6 +53,8 @@ import { cn, formatBytes } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import {
   isCacheStale,
+  r2BucketDomainCacheKey,
+  R2_BUCKET_DOMAIN_CACHE_TTL_MS,
   r2ObjectListingCacheKey,
   useAppStore,
 } from "@/store/useAppStore";
@@ -58,17 +63,24 @@ type CopyFormat = "url" | "markdown";
 type ConflictPolicy = "overwrite" | "rename" | "skip";
 
 interface PlannedUpload {
-  file: File;
+  source: UploadSource;
   key: string;
   contentType?: string;
 }
 
 interface PreparedUpload {
-  file: File;
+  source: UploadSource;
   originalKey: string;
   key: string;
   contentType?: string;
   skipped?: boolean;
+}
+
+interface UploadSource {
+  name: string;
+  file?: File;
+  localPath?: string;
+  contentType?: string;
 }
 
 const R2_PREFIX_PREFETCH_LIMIT = 4;
@@ -114,6 +126,10 @@ function buildPublicUrl(domain: string | null, key: string) {
 
 function fileNameFromKey(key: string) {
   return key.split("/").filter(Boolean).pop() || "r2-object";
+}
+
+function fileNameFromPath(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() || "r2-object";
 }
 
 function extensionForMime(type: string) {
@@ -249,10 +265,11 @@ export function R2BucketsView() {
   const { t } = useI18n();
   const { toast } = useToast();
   const { state, refresh, isRefreshing: isRefreshingBuckets } = useR2Buckets();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const objectRequestIdRef = useRef(0);
+  const domainRequestIdRef = useRef(0);
   const prefetchInFlightRef = useRef<Set<string>>(new Set());
   const setR2ObjectListing = useAppStore((s) => s.setR2ObjectListing);
+  const setR2BucketDomain = useAppStore((s) => s.setR2BucketDomain);
   const activeAccount = useAppStore((s) => s.activeAccount);
   const cloudflareAccountId = useAppStore((s) => s.cloudflareAccountId);
   const [selectedBucket, setSelectedBucket] = useState<R2Bucket | null>(null);
@@ -266,9 +283,12 @@ export function R2BucketsView() {
   const [publicDomain, setPublicDomain] = useState<string | null>(null);
   const [domainsInfo, setDomainsInfo] = useState<BucketDomainsInfo | null>(null);
   const [domainState, setDomainState] = useState<"idle" | "loading" | "error">("idle");
+  const [domainRefreshing, setDomainRefreshing] = useState(false);
+  const [domainLastUpdated, setDomainLastUpdated] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [previewObject, setPreviewObject] = useState<R2Object | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [uploadPrefixInput, setUploadPrefixInput] = useState("");
   const [uploadNameOverride, setUploadNameOverride] = useState("");
   const [useDatePrefix, setUseDatePrefix] = useState(false);
@@ -372,44 +392,100 @@ export function R2BucketsView() {
   useEffect(() => {
     return () => {
       objectRequestIdRef.current += 1;
+      domainRequestIdRef.current += 1;
     };
   }, []);
 
-  useEffect(() => {
-    if (!selectedBucket) return;
+  const loadDomain = useCallback(
+    async (force = false) => {
+      const bucketName = selectedBucket?.name;
+      const requestId = ++domainRequestIdRef.current;
 
-    let cancelled = false;
-    setDomainState("loading");
-    setPublicDomain(null);
-    setDomainsInfo(null);
+      if (!bucketName) {
+        setPublicDomain(null);
+        setDomainsInfo(null);
+        setDomainState("idle");
+        setDomainRefreshing(false);
+        setDomainLastUpdated(null);
+        return;
+      }
 
-    Promise.all([
-      getR2BucketDomain(selectedBucket.name),
-      getR2BucketDomainsList(selectedBucket.name),
-    ])
-      .then(([domain, info]) => {
-        if (cancelled) return;
+      const cacheKey = r2BucketDomainCacheKey(accountScope, bucketName);
+      const cached = useAppStore.getState().r2BucketDomains[cacheKey];
+
+      if (cached) {
+        setPublicDomain(cached.data.publicDomain);
+        setDomainsInfo(cached.data.domainsInfo);
+        setDomainLastUpdated(cached.timestamp);
+        setDomainState("idle");
+      } else {
+        setPublicDomain(null);
+        setDomainsInfo(null);
+        setDomainLastUpdated(null);
+      }
+
+      const shouldFetch = force || !cached || Date.now() - cached.timestamp > R2_BUCKET_DOMAIN_CACHE_TTL_MS;
+      if (!shouldFetch) {
+        setDomainRefreshing(false);
+        return;
+      }
+
+      if (cached) {
+        setDomainRefreshing(true);
+      } else {
+        setDomainState("loading");
+        setDomainRefreshing(false);
+      }
+
+      try {
+        const [domain, info] = await Promise.all([
+          getR2BucketDomain(bucketName),
+          getR2BucketDomainsList(bucketName),
+        ]);
+        if (domainRequestIdRef.current !== requestId) return;
+
+        setR2BucketDomain(cacheKey, domain, info);
         setPublicDomain(domain);
         setDomainsInfo(info);
+        setDomainLastUpdated(Date.now());
         setDomainState("idle");
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        setDomainState("error");
+      } catch (err) {
+        if (domainRequestIdRef.current !== requestId) return;
+        setDomainState(cached ? "idle" : "error");
         setError(String(err));
-      });
+      } finally {
+        if (domainRequestIdRef.current === requestId) {
+          setDomainRefreshing(false);
+        }
+      }
+    },
+    [accountScope, selectedBucket?.name, setR2BucketDomain]
+  );
 
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBucket]);
+  useEffect(() => {
+    loadDomain(false);
+  }, [loadDomain]);
+
+  const tryCopyText = useCallback(async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch (err) {
+      console.warn("[CF Studio] Clipboard write failed:", err);
+      return false;
+    }
+  }, []);
 
   const copyText = useCallback(
     async (value: string, title = t("common.copied")) => {
-      await navigator.clipboard.writeText(value);
-      toast({ title, description: value });
+      const copied = await tryCopyText(value);
+      toast({
+        title: copied ? title : t("r2.copyFailed"),
+        description: copied ? value : t("r2.copyFailedDesc"),
+        variant: copied ? "default" : "destructive",
+      });
     },
-    [t, toast]
+    [t, toast, tryCopyText]
   );
 
   const buildUploadPrefix = useCallback(() => {
@@ -418,15 +494,15 @@ export function R2BucketsView() {
   }, [prefix, uploadPrefixInput, useDatePrefix]);
 
   const planUploads = useCallback(
-    (files: File[]): PlannedUpload[] => {
+    (sources: UploadSource[]): PlannedUpload[] => {
       const uploadPrefix = buildUploadPrefix();
-      return files.map((file) => {
-        const customName = files.length === 1 ? uploadNameOverride.trim().replace(/^\/+/, "") : "";
-        const objectName = customName || file.name;
+      return sources.map((source) => {
+        const customName = sources.length === 1 ? uploadNameOverride.trim().replace(/^\/+/, "") : "";
+        const objectName = customName || source.name;
         return {
-          file,
+          source,
           key: `${uploadPrefix}${objectName}`,
-          contentType: file.type || undefined,
+          contentType: source.contentType,
         };
       });
     },
@@ -517,13 +593,13 @@ export function R2BucketsView() {
     [accountScope, selectedBucket?.name, setR2ObjectListing]
   );
 
-  const uploadFiles = useCallback(
-    async (files: File[]) => {
-      if (!selectedBucket || files.length === 0) return;
+  const uploadSources = useCallback(
+    async (sources: UploadSource[]) => {
+      if (!selectedBucket || sources.length === 0) return;
       setUploading(true);
 
       try {
-        const plan = planUploads(files);
+        const plan = planUploads(sources);
         const preparedUploads = await prepareUploads(selectedBucket.name, plan);
         if (preparedUploads.length === 0) {
           toast({ title: t("r2.uploadSkipped"), description: t("r2.uploadSkippedDesc") });
@@ -534,9 +610,16 @@ export function R2BucketsView() {
         let copiedText: string | null = null;
 
         for (const item of preparedUploads) {
-          const buffer = await item.file.arrayBuffer();
-          const bytes = Array.from(new Uint8Array(buffer));
-          await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType);
+          if (item.source.localPath) {
+            await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, crypto.randomUUID());
+          } else if (item.source.file) {
+            const buffer = await item.source.file.arrayBuffer();
+            const bytes = Array.from(new Uint8Array(buffer));
+            await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType);
+          } else {
+            continue;
+          }
+
           copiedUrl = buildPublicUrl(publicDomain, item.key);
           copiedText = copiedUrl && copyFormat === "markdown"
             ? markdownImage(copiedUrl, item.key)
@@ -552,8 +635,12 @@ export function R2BucketsView() {
         });
 
         if (copiedText) {
-          await navigator.clipboard.writeText(copiedText);
-          toast({ title: t("r2.uploadCopied"), description: copiedText });
+          const copied = await tryCopyText(copiedText);
+          toast({
+            title: copied ? t("r2.uploadCopied") : t("r2.uploadedCopyFailed"),
+            description: copied ? copiedText : t("r2.copyFailedDesc"),
+            variant: copied ? "default" : "destructive",
+          });
         } else {
           toast({ title: t("r2.uploaded"), description: t("r2.noPublicDomainCopy") });
         }
@@ -575,13 +662,50 @@ export function R2BucketsView() {
       selectedBucket,
       t,
       toast,
+      tryCopyText,
     ]
   );
+
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      await uploadSources(
+        files.map((file) => ({
+          name: file.name,
+          file,
+          contentType: file.type || undefined,
+        }))
+      );
+    },
+    [uploadSources]
+  );
+
+  const uploadLocalPaths = useCallback(
+    async (paths: string[]) => {
+      await uploadSources(
+        paths.map((path) => ({
+          name: fileNameFromPath(path),
+          localPath: path,
+        }))
+      );
+    },
+    [uploadSources]
+  );
+
+  const openUploadDialog = useCallback(async () => {
+    const selected = await open({
+      multiple: true,
+      directory: false,
+    });
+    const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+    if (paths.length > 0) {
+      await uploadLocalPaths(paths);
+    }
+  }, [uploadLocalPaths]);
 
   const uploadClipboardImage = useCallback(async () => {
     try {
       if (!navigator.clipboard || !("read" in navigator.clipboard)) {
-        toast({ title: t("r2.clipboardUnsupported"), variant: "destructive" });
+        await openUploadDialog();
         return;
       }
 
@@ -596,11 +720,12 @@ export function R2BucketsView() {
         return;
       }
 
-      toast({ title: t("r2.noClipboardImage"), variant: "destructive" });
+      await openUploadDialog();
     } catch (err) {
-      toast({ title: t("r2.clipboardFailed"), description: String(err), variant: "destructive" });
+      console.warn("[CF Studio] Clipboard image read failed:", err);
+      await openUploadDialog();
     }
-  }, [t, toast, uploadFiles]);
+  }, [openUploadDialog, uploadFiles]);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -685,7 +810,7 @@ export function R2BucketsView() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openUploadDialog}
             disabled={!selectedBucket || uploading}
           >
             {uploading ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Upload size={14} className="mr-2" />}
@@ -693,84 +818,14 @@ export function R2BucketsView() {
           </Button>
           <Button variant="outline" size="sm" onClick={uploadClipboardImage} disabled={!selectedBucket || uploading}>
             <Clipboard size={14} className="mr-2" />
-            {t("r2.pasteImage")}
+            {t("r2.pasteOrUpload")}
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} disabled={!selectedBucket} title={t("r2.uploadSettings")}>
+            <SlidersHorizontal size={14} />
           </Button>
           <Button variant="ghost" size="icon" onClick={refresh} disabled={state.status === "loading" || isRefreshingBuckets}>
             <RefreshCw size={14} className={cn((state.status === "loading" || isRefreshingBuckets) && "animate-spin")} />
           </Button>
-          <input
-            ref={fileInputRef}
-            className="hidden"
-            type="file"
-            multiple
-            onChange={(event) => {
-              uploadFiles(Array.from(event.target.files ?? []));
-              event.currentTarget.value = "";
-            }}
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-3 rounded-md border border-border bg-muted/20 p-3 xl:grid-cols-[1.2fr_1fr_auto_auto_auto]">
-        <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="r2-upload-prefix" className="text-xs text-muted-foreground">
-            {t("r2.uploadPrefix")}
-          </Label>
-          <Input
-            id="r2-upload-prefix"
-            value={uploadPrefixInput}
-            onChange={(event) => setUploadPrefixInput(event.target.value)}
-            placeholder={prefix || t("r2.uploadPrefixPlaceholder")}
-            className="h-9"
-          />
-        </div>
-        <div className="min-w-0 space-y-1.5">
-          <Label htmlFor="r2-upload-name" className="text-xs text-muted-foreground">
-            {t("r2.uploadName")}
-          </Label>
-          <Input
-            id="r2-upload-name"
-            value={uploadNameOverride}
-            onChange={(event) => setUploadNameOverride(event.target.value)}
-            placeholder={t("r2.uploadNamePlaceholder")}
-            className="h-9"
-          />
-        </div>
-        <div className="flex items-end gap-2 pb-2">
-          <Checkbox
-            id="r2-date-prefix"
-            checked={useDatePrefix}
-            onCheckedChange={(checked) => setUseDatePrefix(checked === true)}
-          />
-          <Label htmlFor="r2-date-prefix" className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <CalendarDays size={13} />
-            {t("r2.datePrefix")}
-          </Label>
-        </div>
-        <div className="min-w-[150px] space-y-1.5">
-          <Label className="text-xs text-muted-foreground">{t("r2.conflictPolicy")}</Label>
-          <Select value={conflictPolicy} onValueChange={(value) => setConflictPolicy(value as ConflictPolicy)}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="rename">{t("r2.conflictRename")}</SelectItem>
-              <SelectItem value="skip">{t("r2.conflictSkip")}</SelectItem>
-              <SelectItem value="overwrite">{t("r2.conflictOverwrite")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="min-w-[150px] space-y-1.5">
-          <Label className="text-xs text-muted-foreground">{t("r2.copyFormat")}</Label>
-          <Select value={copyFormat} onValueChange={(value) => setCopyFormat(value as CopyFormat)}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="url">{t("r2.copyUrlFormat")}</SelectItem>
-              <SelectItem value="markdown">{t("r2.copyMarkdownFormat")}</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
@@ -853,7 +908,7 @@ export function R2BucketsView() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2 text-xs">
+            <div className="group flex items-center justify-between gap-3 border-t border-border/60 px-4 py-2 text-xs">
               <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
                 <Globe2 size={13} className="shrink-0" />
                 {domainState === "loading" && <span>{t("r2.loadingDomain")}</span>}
@@ -862,21 +917,49 @@ export function R2BucketsView() {
                   <>
                     <Badge variant="secondary" className="h-5 text-[10px]">{t("r2.public")}</Badge>
                     <span className="truncate font-mono">{currentDomainLabel}</span>
+                    {domainLastUpdated && (
+                      <span className="hidden shrink-0 text-[10px] text-muted-foreground/70 sm:inline">
+                        {t("r2.cachedObjects").replace("{time}", formatCacheTime(domainLastUpdated))}
+                      </span>
+                    )}
                   </>
                 )}
                 {domainState === "idle" && !currentDomainLabel && (
                   <>
                     <Badge variant="outline" className="h-5 text-[10px]">{t("r2.private")}</Badge>
                     <span className="truncate">{t("r2.noPublicDomain")}</span>
+                    {domainLastUpdated && (
+                      <span className="hidden shrink-0 text-[10px] text-muted-foreground/70 sm:inline">
+                        {t("r2.cachedObjects").replace("{time}", formatCacheTime(domainLastUpdated))}
+                      </span>
+                    )}
                   </>
                 )}
               </div>
-              {publicDomain && (
-                <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(publicDomain)}>
-                  <Copy size={12} className="mr-1.5" />
-                  {t("r2.copyDomain")}
-                </Button>
-              )}
+              <div className="flex shrink-0 items-center gap-1">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                        onClick={() => loadDomain(true)}
+                        disabled={!selectedBucket || domainRefreshing || domainState === "loading"}
+                      >
+                        <RefreshCw size={12} className={cn(domainRefreshing && "animate-spin")} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("r2.refreshDomain")}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                {publicDomain && (
+                  <Button variant="ghost" size="sm" className="h-7" onClick={() => copyText(publicDomain)}>
+                    <Copy size={12} className="mr-1.5" />
+                    {t("r2.copyDomain")}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 
@@ -965,6 +1048,77 @@ export function R2BucketsView() {
           )}
         </section>
       </div>
+
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("r2.uploadSettings")}</DialogTitle>
+            <DialogDescription>{t("r2.uploadSettingsDesc")}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="r2-upload-prefix" className="text-xs text-muted-foreground">
+                {t("r2.uploadPrefix")}
+              </Label>
+              <Input
+                id="r2-upload-prefix"
+                value={uploadPrefixInput}
+                onChange={(event) => setUploadPrefixInput(event.target.value)}
+                placeholder={prefix || t("r2.uploadPrefixPlaceholder")}
+                className="h-9"
+              />
+            </div>
+            <div className="min-w-0 space-y-1.5">
+              <Label htmlFor="r2-upload-name" className="text-xs text-muted-foreground">
+                {t("r2.uploadName")}
+              </Label>
+              <Input
+                id="r2-upload-name"
+                value={uploadNameOverride}
+                onChange={(event) => setUploadNameOverride(event.target.value)}
+                placeholder={t("r2.uploadNamePlaceholder")}
+                className="h-9"
+              />
+            </div>
+            <div className="flex items-end gap-2 pb-2">
+              <Checkbox
+                id="r2-date-prefix"
+                checked={useDatePrefix}
+                onCheckedChange={(checked) => setUseDatePrefix(checked === true)}
+              />
+              <Label htmlFor="r2-date-prefix" className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CalendarDays size={13} />
+                {t("r2.datePrefix")}
+              </Label>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">{t("r2.conflictPolicy")}</Label>
+              <Select value={conflictPolicy} onValueChange={(value) => setConflictPolicy(value as ConflictPolicy)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rename">{t("r2.conflictRename")}</SelectItem>
+                  <SelectItem value="skip">{t("r2.conflictSkip")}</SelectItem>
+                  <SelectItem value="overwrite">{t("r2.conflictOverwrite")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs text-muted-foreground">{t("r2.copyFormat")}</Label>
+              <Select value={copyFormat} onValueChange={(value) => setCopyFormat(value as CopyFormat)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="url">{t("r2.copyUrlFormat")}</SelectItem>
+                  <SelectItem value="markdown">{t("r2.copyMarkdownFormat")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!previewObject} onOpenChange={(open) => !open && setPreviewObject(null)}>
         <DialogContent className="max-w-4xl overflow-hidden p-0">

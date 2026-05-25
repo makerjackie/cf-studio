@@ -10,7 +10,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { D1Database, CloudflareAccount } from "@/hooks/useCloudflare";
-import type { FolderListing, R2Bucket } from "@/lib/r2";
+import type { BucketDomainsInfo, FolderListing, R2Bucket } from "@/lib/r2";
 
 export interface UserProfile {
   id: string;
@@ -45,6 +45,8 @@ export interface KVNamespace {
 /** How long cached data is considered fresh (ms). Default: 10 minutes. */
 export const CACHE_TTL_MS = 10 * 60 * 1_000;
 export const R2_OBJECT_LISTING_CACHE_LIMIT = 200;
+export const R2_BUCKET_DOMAIN_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
+export const R2_BUCKET_DOMAIN_CACHE_LIMIT = 200;
 
 export function isCacheStale(lastFetched: number | null): boolean {
   if (lastFetched === null) return true;
@@ -59,8 +61,23 @@ export function r2ObjectListingCacheKey(accountId: string | null | undefined, bu
   ].join("::");
 }
 
+export function r2BucketDomainCacheKey(accountId: string | null | undefined, bucketName: string): string {
+  return [
+    encodeURIComponent(accountId || "default"),
+    encodeURIComponent(bucketName),
+  ].join("::");
+}
+
 export interface R2ObjectListingCacheEntry {
   data: FolderListing;
+  timestamp: number;
+}
+
+export interface R2BucketDomainCacheEntry {
+  data: {
+    publicDomain: string | null;
+    domainsInfo: BucketDomainsInfo | null;
+  };
   timestamp: number;
 }
 
@@ -76,6 +93,7 @@ interface AppState {
   kvNamespaces: KVNamespace[];
   r2Buckets: R2Bucket[];
   r2ObjectListings: Record<string, R2ObjectListingCacheEntry>;
+  r2BucketDomains: Record<string, R2BucketDomainCacheEntry>;
 
   // ── Preferences ──
   tableDensity: "compact" | "comfortable";
@@ -146,6 +164,9 @@ interface AppState {
   /** Cache one R2 bucket/prefix object listing for stale-while-revalidate browsing. */
   setR2ObjectListing: (cacheKey: string, listing: FolderListing) => void;
 
+  /** Cache one R2 bucket's public-domain status. */
+  setR2BucketDomain: (cacheKey: string, publicDomain: string | null, domainsInfo: BucketDomainsInfo | null) => void;
+
   /**
    * Wipe all cached data and timestamps.
    * Call this when the user switches Cloudflare accounts or logs out.
@@ -171,6 +192,7 @@ export const useAppStore = create<AppState>()(
       kvNamespaces: [],
       r2Buckets: [],
       r2ObjectListings: {},
+      r2BucketDomains: {},
       tableDensity: "comfortable",
       showTableColumnCounts: true,
       autoUpdate: true,
@@ -251,6 +273,29 @@ export const useAppStore = create<AppState>()(
           return { r2ObjectListings: next };
         }),
 
+      setR2BucketDomain: (cacheKey, publicDomain, domainsInfo) =>
+        set((state) => {
+          const next: Record<string, R2BucketDomainCacheEntry> = {
+            ...state.r2BucketDomains,
+            [cacheKey]: {
+              data: { publicDomain, domainsInfo },
+              timestamp: Date.now(),
+            },
+          };
+
+          const keys = Object.keys(next);
+          if (keys.length > R2_BUCKET_DOMAIN_CACHE_LIMIT) {
+            keys
+              .sort((a, b) => next[a].timestamp - next[b].timestamp)
+              .slice(0, keys.length - R2_BUCKET_DOMAIN_CACHE_LIMIT)
+              .forEach((key) => {
+                delete next[key];
+              });
+          }
+
+          return { r2BucketDomains: next };
+        }),
+
       clearCache: () =>
         set({
           userProfile: null,
@@ -261,6 +306,7 @@ export const useAppStore = create<AppState>()(
           kvNamespaces: [],
           r2Buckets: [],
           r2ObjectListings: {},
+          r2BucketDomains: {},
           lastFetched: null,
           kvLastFetched: null,
           r2LastFetched: null,
@@ -334,6 +380,7 @@ export const useAppStore = create<AppState>()(
         kvNamespaces: state.kvNamespaces,
         r2Buckets: state.r2Buckets,
         r2ObjectListings: state.r2ObjectListings,
+        r2BucketDomains: state.r2BucketDomains,
         lastFetched: state.lastFetched,
         kvLastFetched: state.kvLastFetched,
         r2LastFetched: state.r2LastFetched,
