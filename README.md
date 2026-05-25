@@ -1,6 +1,6 @@
 # CF Studio
 
-中文说明见 [README.zh-CN.md](README.zh-CN.md).
+Simplified Chinese README: [README.zh-CN.md](README.zh-CN.md).
 
 A blazing-fast, native desktop client for Cloudflare D1 and R2.
 
