@@ -85,6 +85,7 @@ import {
   fileNameFromUrl,
   folderLabel,
   folderPrefixForKey,
+  formatCopyOutput,
   isImageObject,
   markdownImage,
   markdownImageLines,
@@ -129,6 +130,7 @@ interface TransferItem {
   bucketName?: string;
   status: TransferStatus;
   progress: number;
+  attempt?: number;
   error?: string;
 }
 
@@ -324,6 +326,28 @@ function transferStatusKey(status: TransferStatus) {
   if (status === "running") return "r2.transfer.running";
   if (status === "done") return "r2.transfer.done";
   return "r2.transfer.failed";
+}
+
+function clampInteger(value: number, min: number, max: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+) {
+  let nextIndex = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await worker(items[index], index);
+    }
+  });
+
+  await Promise.all(runners);
 }
 
 async function clipboardImageToFile() {
@@ -728,8 +752,11 @@ export function R2BucketsView() {
   const [uploadNameOverride, setUploadNameOverride] = useState("");
   const [useDatePrefix, setUseDatePrefix] = useState(false);
   const [copyFormat, setCopyFormat] = useState<CopyFormat>("url");
+  const [copyTemplate, setCopyTemplate] = useState("{url}");
   const [conflictPolicy, setConflictPolicy] = useState<ConflictPolicy>("rename");
   const [cacheControl, setCacheControl] = useState("");
+  const [transferConcurrency, setTransferConcurrency] = useState(DEFAULT_R2_UPLOAD_SETTINGS.transferConcurrency);
+  const [retryCount, setRetryCount] = useState(DEFAULT_R2_UPLOAD_SETTINGS.retryCount);
   const [imageOptimizationEnabled, setImageOptimizationEnabled] = useState(false);
   const [imageOutputFormat, setImageOutputFormat] = useState<R2ImageOutputFormat>("webp");
   const [imageQuality, setImageQuality] = useState(82);
@@ -771,8 +798,11 @@ export function R2BucketsView() {
       uploadPrefixInput,
       useDatePrefix,
       copyFormat,
+      copyTemplate,
       conflictPolicy,
       cacheControl,
+      transferConcurrency,
+      retryCount,
       imageOptimization: {
         enabled: imageOptimizationEnabled,
         outputFormat: imageOutputFormat,
@@ -786,12 +816,15 @@ export function R2BucketsView() {
       cacheControl,
       conflictPolicy,
       copyFormat,
+      copyTemplate,
       imageMaxHeight,
       imageMaxWidth,
       imageOptimizationEnabled,
       imageOutputFormat,
       imageQuality,
       imageSkipIfLarger,
+      retryCount,
+      transferConcurrency,
       uploadPrefixInput,
       useDatePrefix,
     ]
@@ -811,8 +844,11 @@ export function R2BucketsView() {
       setUploadPrefixInput(DEFAULT_R2_UPLOAD_SETTINGS.uploadPrefixInput);
       setUseDatePrefix(DEFAULT_R2_UPLOAD_SETTINGS.useDatePrefix);
       setCopyFormat(DEFAULT_R2_UPLOAD_SETTINGS.copyFormat);
+      setCopyTemplate(DEFAULT_R2_UPLOAD_SETTINGS.copyTemplate);
       setConflictPolicy(DEFAULT_R2_UPLOAD_SETTINGS.conflictPolicy);
       setCacheControl(DEFAULT_R2_UPLOAD_SETTINGS.cacheControl);
+      setTransferConcurrency(DEFAULT_R2_UPLOAD_SETTINGS.transferConcurrency);
+      setRetryCount(DEFAULT_R2_UPLOAD_SETTINGS.retryCount);
       setImageOptimizationEnabled(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.enabled);
       setImageOutputFormat(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.outputFormat);
       setImageQuality(DEFAULT_R2_UPLOAD_SETTINGS.imageOptimization.quality);
@@ -830,8 +866,11 @@ export function R2BucketsView() {
     setUploadPrefixInput(settings.uploadPrefixInput);
     setUseDatePrefix(settings.useDatePrefix);
     setCopyFormat(settings.copyFormat);
+    setCopyTemplate(settings.copyTemplate);
     setConflictPolicy(settings.conflictPolicy);
     setCacheControl(settings.cacheControl);
+    setTransferConcurrency(settings.transferConcurrency);
+    setRetryCount(settings.retryCount);
     setImageOptimizationEnabled(settings.imageOptimization.enabled);
     setImageOutputFormat(settings.imageOptimization.outputFormat);
     setImageQuality(settings.imageOptimization.quality);
@@ -1208,11 +1247,14 @@ export function R2BucketsView() {
           }
         }
 
-        const successfulKeys: string[] = [];
-        let failedCount = 0;
-        let firstUploadError: string | null = null;
+        const uploadResults: Array<{ key: string; ok: boolean; error?: string }> = preparedUploads.map((item) => ({
+          key: item.key,
+          ok: false,
+        }));
+        const normalizedConcurrency = clampInteger(transferConcurrency, 1, 5, DEFAULT_R2_UPLOAD_SETTINGS.transferConcurrency);
+        const normalizedRetryCount = clampInteger(retryCount, 0, 3, DEFAULT_R2_UPLOAD_SETTINGS.retryCount);
 
-        for (const item of preparedUploads) {
+        await runWithConcurrency(preparedUploads, normalizedConcurrency, async (item, index) => {
           const transferId = addTransfer({
             kind: "upload",
             bucketName: selectedBucket.name,
@@ -1220,30 +1262,55 @@ export function R2BucketsView() {
             label: fileNameFromKey(item.key),
           });
 
-          try {
-            updateTransfer(transferId, { status: "running", progress: 20 });
-            if (item.source.localPath) {
-              await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, transferId, cacheControl.trim() || undefined);
-            } else if (item.source.file) {
-              const buffer = await item.source.file.arrayBuffer();
-              const bytes = Array.from(new Uint8Array(buffer));
-              updateTransfer(transferId, { progress: 45 });
-              await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType, cacheControl.trim() || undefined);
-            } else if (item.source.remoteUrl) {
-              updateTransfer(transferId, { progress: 45 });
-              await uploadR2RemoteUrl(selectedBucket.name, item.key, item.source.remoteUrl, cacheControl.trim() || undefined);
-            } else {
-              updateTransfer(transferId, { status: "failed", error: "Missing upload source." });
-              continue;
+          for (let attempt = 0; attempt <= normalizedRetryCount; attempt += 1) {
+            try {
+              updateTransfer(transferId, {
+                status: "running",
+                progress: attempt === 0 ? 20 : 5,
+                attempt: attempt + 1,
+                error: undefined,
+              });
+              if (item.source.localPath) {
+                await uploadR2Object(selectedBucket.name, item.key, item.source.localPath, transferId, cacheControl.trim() || undefined);
+              } else if (item.source.file) {
+                const buffer = await item.source.file.arrayBuffer();
+                const bytes = Array.from(new Uint8Array(buffer));
+                updateTransfer(transferId, { progress: 45 });
+                await uploadR2ObjectBytes(selectedBucket.name, item.key, bytes, item.contentType, cacheControl.trim() || undefined);
+              } else if (item.source.remoteUrl) {
+                updateTransfer(transferId, { progress: 45 });
+                await uploadR2RemoteUrl(selectedBucket.name, item.key, item.source.remoteUrl, cacheControl.trim() || undefined);
+              } else {
+                throw new Error("Missing upload source.");
+              }
+              updateTransfer(transferId, { status: "done", progress: 100 });
+              uploadResults[index] = { key: item.key, ok: true };
+              return;
+            } catch (err) {
+              const message = String(err);
+              if (message.toLowerCase().includes("cancel")) {
+                updateTransfer(transferId, { status: "failed", progress: 100, error: t("r2.uploadCancelled") });
+                uploadResults[index] = { key: item.key, ok: false, error: t("r2.uploadCancelled") };
+                return;
+              }
+              if (attempt < normalizedRetryCount) {
+                updateTransfer(transferId, {
+                  status: "queued",
+                  progress: 0,
+                  error: t("r2.retryingUpload", { attempt: attempt + 2 }),
+                });
+                continue;
+              }
+              updateTransfer(transferId, { status: "failed", progress: 100, error: message });
+              uploadResults[index] = { key: item.key, ok: false, error: message };
+              return;
             }
-            updateTransfer(transferId, { status: "done", progress: 100 });
-            successfulKeys.push(item.key);
-          } catch (err) {
-            updateTransfer(transferId, { status: "failed", progress: 100, error: String(err) });
-            failedCount += 1;
-            firstUploadError = firstUploadError || String(err);
           }
-        }
+        });
+
+        const successfulKeys = uploadResults.filter((item) => item.ok).map((item) => item.key);
+        const failedCount = uploadResults.filter((item) => !item.ok).length;
+        const firstUploadError = uploadResults.find((item) => !item.ok)?.error ?? null;
 
         if (successfulKeys.length === 0 && firstUploadError) {
           throw new Error(firstUploadError);
@@ -1257,7 +1324,7 @@ export function R2BucketsView() {
           }
         });
 
-        const copiedText = copyOutputLinesForKeys(successfulKeys, publicDomain, copyFormat);
+        const copiedText = copyOutputLinesForKeys(successfulKeys, publicDomain, copyFormat, copyTemplate);
 
         if (copiedText) {
           const copied = await tryCopyText(copiedText);
@@ -1287,6 +1354,7 @@ export function R2BucketsView() {
     [
       conflictPolicy,
       copyFormat,
+      copyTemplate,
       cacheControl,
       currentUploadSettings,
       planUploads,
@@ -1295,11 +1363,13 @@ export function R2BucketsView() {
       prepareUploads,
       publicDomain,
       requestUploadPreflight,
+      retryCount,
       reloadObjects,
       selectedBucket,
       t,
       toast,
       tryCopyText,
+      transferConcurrency,
       addTransfer,
       updateTransfer,
     ]
@@ -1627,6 +1697,18 @@ export function R2BucketsView() {
     }
   }, [copyText, currentSelectedObjects, publicDomain, t]);
 
+  const copySelectedTemplate = useCallback(async () => {
+    const value = copyOutputLinesForKeys(
+      currentSelectedObjects.map((object) => object.key),
+      publicDomain,
+      copyFormat,
+      copyTemplate
+    );
+    if (value) {
+      await copyText(value, t("r2.copyCustom"));
+    }
+  }, [copyFormat, copyTemplate, copyText, currentSelectedObjects, publicDomain, t]);
+
   const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragActive(false);
@@ -1845,6 +1927,12 @@ export function R2BucketsView() {
                     <Clipboard size={12} className="mr-1.5" />
                     {t("r2.copyMarkdown")}
                   </Button>
+                  {copyFormat === "custom" && (
+                    <Button variant="outline" size="sm" className="h-7" onClick={copySelectedTemplate} disabled={!publicDomain}>
+                      <Copy size={12} className="mr-1.5" />
+                      {t("r2.copyCustom")}
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" className="h-7" onClick={() => downloadObjectsToDirectory(currentSelectedObjects)}>
                     <Download size={12} className="mr-1.5" />
                     {t("r2.downloadSelected")}
@@ -2198,6 +2286,11 @@ export function R2BucketsView() {
                 {item.kind === "upload" ? <Upload size={13} className="text-muted-foreground" /> : <Download size={13} className="text-muted-foreground" />}
                 <div className="min-w-0">
                   <p className="truncate font-medium">{item.label}</p>
+                  {item.attempt && item.attempt > 1 && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {t("r2.transferAttempt", { attempt: item.attempt })}
+                    </p>
+                  )}
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
                       className={cn("h-full bg-primary", item.status === "failed" && "bg-destructive")}
@@ -2334,8 +2427,84 @@ export function R2BucketsView() {
                       <SelectItem value="url">{t("r2.copyUrlFormat")}</SelectItem>
                       <SelectItem value="markdown">{t("r2.copyMarkdownFormat")}</SelectItem>
                       <SelectItem value="html">{t("r2.copyHtmlFormat")}</SelectItem>
+                      <SelectItem value="custom">{t("r2.copyCustomFormat")}</SelectItem>
                     </SelectContent>
                   </Select>
+                  {copyFormat === "custom" && (
+                    <div className="space-y-1.5 pt-2">
+                      <SettingLabel
+                        htmlFor="r2-copy-template"
+                        label={t("r2.copyTemplate")}
+                        help={t("r2.copyTemplateHelp")}
+                      />
+                      <Input
+                        id="r2-copy-template"
+                        value={copyTemplate}
+                        onChange={(event) => {
+                          setCopyTemplate(event.target.value);
+                          persistUploadSettings({ copyTemplate: event.target.value });
+                        }}
+                        placeholder="{url}"
+                        className="h-9 font-mono text-xs"
+                      />
+                      <p className="break-all rounded-md border border-dashed border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                        {formatCopyOutput(
+                          "https://assets.example.com/images/example.png",
+                          "images/example.png",
+                          "custom",
+                          copyTemplate
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </SettingSection>
+
+              <SettingSection icon={<Upload size={14} />} title={t("r2.transferSection")}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <SettingLabel
+                      htmlFor="r2-transfer-concurrency"
+                      label={t("r2.transferConcurrency")}
+                      help={t("r2.transferConcurrencyHelp")}
+                    />
+                    <Input
+                      id="r2-transfer-concurrency"
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={transferConcurrency}
+                      onChange={(event) => {
+                        const next = clampInteger(Number(event.target.value), 1, 5, DEFAULT_R2_UPLOAD_SETTINGS.transferConcurrency);
+                        setTransferConcurrency(next);
+                        persistUploadSettings({ transferConcurrency: next });
+                      }}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <SettingLabel
+                      htmlFor="r2-retry-count"
+                      label={t("r2.retryCount")}
+                      help={t("r2.retryCountHelp")}
+                    />
+                    <Input
+                      id="r2-retry-count"
+                      type="number"
+                      min={0}
+                      max={3}
+                      value={retryCount}
+                      onChange={(event) => {
+                        const next = clampInteger(Number(event.target.value), 0, 3, DEFAULT_R2_UPLOAD_SETTINGS.retryCount);
+                        setRetryCount(next);
+                        persistUploadSettings({ retryCount: next });
+                      }}
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <div className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                  {t("r2.uploadPathStatus")}
                 </div>
               </SettingSection>
 

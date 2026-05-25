@@ -97,8 +97,11 @@ export interface R2UploadSettings {
   uploadPrefixInput: string;
   useDatePrefix: boolean;
   copyFormat: CopyFormat;
+  copyTemplate: string;
   conflictPolicy: ConflictPolicy;
   cacheControl: string;
+  transferConcurrency: number;
+  retryCount: number;
   imageOptimization: R2ImageOptimizationSettings;
 }
 
@@ -110,8 +113,11 @@ export const DEFAULT_R2_UPLOAD_SETTINGS: R2UploadSettings = {
   uploadPrefixInput: "",
   useDatePrefix: false,
   copyFormat: "url",
+  copyTemplate: "{url}",
   conflictPolicy: "rename",
   cacheControl: "",
+  transferConcurrency: 2,
+  retryCount: 1,
   imageOptimization: {
     enabled: false,
     outputFormat: "webp",

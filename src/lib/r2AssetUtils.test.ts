@@ -7,6 +7,7 @@ import {
   fileNameFromKey,
   fileNameFromPath,
   fileNameFromUrl,
+  formatCustomCopyOutput,
   formatCopyOutput,
   markdownImageLines,
   normalizePrefix,
@@ -46,6 +47,12 @@ describe("r2AssetUtils", () => {
     expect(formatCopyOutput("https://assets.example.com/readme.txt", "readme.txt", "markdown")).toBe(
       "[readme.txt](https://assets.example.com/readme.txt)"
     );
+    expect(formatCopyOutput(url, "blog/hello world.png", "custom", "- {name}: {url}")).toBe(
+      "- hello world.png: https://assets.example.com/blog/hello world.png"
+    );
+    expect(formatCustomCopyOutput("{key} -> {url}", url, "blog/hello world.png")).toBe(
+      "blog/hello world.png -> https://assets.example.com/blog/hello world.png"
+    );
   });
 
   it("builds one copied upload output per successful key", () => {
@@ -57,6 +64,14 @@ describe("r2AssetUtils", () => {
       "![a.jpg](https://assets.example.com/assets/a.jpg)\n![b.png](https://assets.example.com/assets/b.png)"
     );
     expect(copyOutputLinesForKeys(["assets/a.jpg"], null, "url")).toBe("");
+    expect(copyOutputLinesForKeys(
+      ["assets/a.jpg", "assets/b.png"],
+      "https://assets.example.com",
+      "custom",
+      "asset={name} url={url}"
+    )).toBe(
+      "asset=a.jpg url=https://assets.example.com/assets/a.jpg\nasset=b.png url=https://assets.example.com/assets/b.png"
+    );
   });
 
   it("normalizes prefixes and date prefixes", () => {

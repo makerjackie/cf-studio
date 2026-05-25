@@ -3,7 +3,7 @@ import type { R2Object } from "@/lib/r2";
 export type R2ViewMode = "list" | "grid";
 export type R2SortField = "name" | "size" | "updated" | "type";
 export type R2SortDirection = "asc" | "desc";
-export type CopyFormat = "url" | "markdown" | "html";
+export type CopyFormat = "url" | "markdown" | "html" | "custom";
 export type ConflictPolicy = "overwrite" | "rename" | "skip";
 
 export interface UploadSource {
@@ -147,17 +147,27 @@ export function htmlLink(url: string, key: string) {
     : `<a href="${safeUrl}">${safeName}</a>`;
 }
 
-export function formatCopyOutput(url: string, key: string, format: CopyFormat) {
+export function formatCustomCopyOutput(template: string, url: string, key: string) {
+  const name = fileNameFromKey(key);
+  const resolvedTemplate = template.trim() || "{url}";
+  return resolvedTemplate
+    .split("{url}").join(url)
+    .split("{key}").join(key)
+    .split("{name}").join(name);
+}
+
+export function formatCopyOutput(url: string, key: string, format: CopyFormat, customTemplate = "{url}") {
+  if (format === "custom") return formatCustomCopyOutput(customTemplate, url, key);
   if (format === "markdown") return markdownLink(url, key);
   if (format === "html") return htmlLink(url, key);
   return url;
 }
 
-export function copyOutputLinesForKeys(keys: string[], publicDomain: string | null, format: CopyFormat) {
+export function copyOutputLinesForKeys(keys: string[], publicDomain: string | null, format: CopyFormat, customTemplate = "{url}") {
   return keys
     .map((key) => {
       const url = buildPublicUrl(publicDomain, key);
-      return url ? formatCopyOutput(url, key, format) : null;
+      return url ? formatCopyOutput(url, key, format, customTemplate) : null;
     })
     .filter((value): value is string => Boolean(value))
     .join("\n");
