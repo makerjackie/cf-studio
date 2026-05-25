@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 use crate::cloudflare_auth::{read_credentials, AuthError};
 use crate::cloudflare_client::{CfError, CfResponse, CloudflareClient};
 
-
 // ── Error type ─────────────────────────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
@@ -21,7 +20,9 @@ pub enum D1Error {
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
 
-    #[error("Could not determine your Cloudflare account ID. Your account may not have API access.")]
+    #[error(
+        "Could not determine your Cloudflare account ID. Your account may not have API access."
+    )]
     NoAccountId,
 
     #[error("Cloudflare API error(s): {0}")]
@@ -69,8 +70,6 @@ pub struct D1AnalysisResult {
     pub scanned_tables: Vec<String>,
     pub raw_plan: Vec<Value>,
 }
-
-
 
 // ── Helper ─────────────────────────────────────────────────────────────────────
 
@@ -170,16 +169,16 @@ async fn execute_query(
 
     let endpoint = format!("accounts/{account_id}/d1/database/{database_id}/query");
 
-    let resp = client
-        .post(&endpoint)
-        .json(&body)
-        .send()
-        .await?;
+    let resp = client.post(&endpoint).json(&body).send().await?;
     let resp_text = resp.text().await.map_err(|e| D1Error::Http(e))?;
-    let resp: CfResponse<Vec<D1QueryResult>> = serde_json::from_str(&resp_text).map_err(|e| D1Error::Api(format!("Failed to parse response: {}. Body: {}", e, resp_text)))?;
+    let resp: CfResponse<Vec<D1QueryResult>> = serde_json::from_str(&resp_text).map_err(|e| {
+        D1Error::Api(format!(
+            "Failed to parse response: {}. Body: {}",
+            e, resp_text
+        ))
+    })?;
 
     if !resp.success {
-
         return Err(D1Error::Api(api_errors_to_string(&resp.errors)));
     }
 
@@ -204,23 +203,31 @@ async fn fetch_table_metadata(
     match execute_query(client, account_id, database_id, "PRAGMA table_list;", None).await {
         Ok(results) => {
             if let Some(res) = results.get(0) {
-                let tables: Vec<D1TableSummary> = res.results.iter().filter_map(|v| {
-                    if let Some(name) = v.get("name").and_then(|v| v.as_str()) {
-                        if !name.starts_with("sqlite_") && !name.starts_with("d1_") && !name.starts_with("_cf_") {
-                            let ncol = v.get("ncol").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
-                            return Some(D1TableSummary { name: name.to_string(), ncol });
+                let tables: Vec<D1TableSummary> = res
+                    .results
+                    .iter()
+                    .filter_map(|v| {
+                        if let Some(name) = v.get("name").and_then(|v| v.as_str()) {
+                            if !name.starts_with("sqlite_")
+                                && !name.starts_with("d1_")
+                                && !name.starts_with("_cf_")
+                            {
+                                let ncol =
+                                    v.get("ncol").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                return Some(D1TableSummary {
+                                    name: name.to_string(),
+                                    ncol,
+                                });
+                            }
                         }
-                    }
-                    None
-                }).collect();
-                
+                        None
+                    })
+                    .collect();
 
                 return Ok((tables.len() as u32, tables));
             }
-        },
-        Err(_) => {
-
         }
+        Err(_) => {}
     }
 
     Ok((0, vec![]))
@@ -256,7 +263,6 @@ pub async fn fetch_d1_databases() -> Result<Vec<D1Database>, D1Error> {
 
     let mut databases = list_databases(&client, &account_id).await?;
 
-
     for db in &mut databases {
         // Run the metadata fetch if count is missing (None) or 0 (likely placeholder)
         if db.num_tables.is_none() || db.num_tables == Some(0) {
@@ -264,7 +270,7 @@ pub async fn fetch_d1_databases() -> Result<Vec<D1Database>, D1Error> {
                 Ok((count, tables)) => {
                     db.num_tables = Some(count);
                     db.tables = Some(tables);
-                },
+                }
                 Err(_) => {
                     db.num_tables = Some(0);
                     db.tables = Some(vec![]);
@@ -305,8 +311,6 @@ pub async fn execute_d1_query(
                 e.to_string(),
             )))
         })?;
-
-
 
     let client = CloudflareClient::new(&creds.oauth_token)?;
 
@@ -355,7 +359,7 @@ pub async fn analyze_d1_query(
 
     let trimmed = sql_query.trim();
     let is_select = trimmed.to_uppercase().starts_with("SELECT");
-    
+
     let explain_query = if is_select {
         format!("EXPLAIN QUERY PLAN {}", trimmed)
     } else {
@@ -372,7 +376,8 @@ pub async fn analyze_d1_query(
     .await?;
 
     // D1 returns multiple results for multiple statements, we usually analyze the first one.
-    let plan_rows = results.first()
+    let plan_rows = results
+        .first()
         .map(|r| r.results.clone())
         .unwrap_or_default();
 
@@ -381,7 +386,8 @@ pub async fn analyze_d1_query(
     let mut scanned_tables = Vec::new();
 
     for row in &plan_rows {
-        let detail = row.get("detail")
+        let detail = row
+            .get("detail")
             .and_then(|v| v.as_str())
             .or_else(|| row.get("description").and_then(|v| v.as_str()))
             .unwrap_or("");
@@ -393,7 +399,10 @@ pub async fn analyze_d1_query(
             cost_tier = "High".to_string();
         } else if detail_upper.contains("USING COVERING INDEX") && cost_tier != "High" {
             cost_tier = "Medium".to_string();
-        } else if (detail_upper.contains("USING PRIMARY KEY") || detail_upper.contains("USING ROWID")) && cost_tier == "Low" {
+        } else if (detail_upper.contains("USING PRIMARY KEY")
+            || detail_upper.contains("USING ROWID"))
+            && cost_tier == "Low"
+        {
             cost_tier = "Low".to_string();
         }
 
@@ -404,7 +413,9 @@ pub async fn analyze_d1_query(
             // We look for the part after "TABLE"
             if let Some(pos) = parts.iter().position(|&p| p.to_uppercase() == "TABLE") {
                 if let Some(table_name) = parts.get(pos + 1) {
-                    let clean_name = table_name.trim_matches(|c| c == '(' || c == ')').to_string();
+                    let clean_name = table_name
+                        .trim_matches(|c| c == '(' || c == ')')
+                        .to_string();
                     if !scanned_tables.contains(&clean_name) {
                         scanned_tables.push(clean_name);
                     }
@@ -420,5 +431,3 @@ pub async fn analyze_d1_query(
         raw_plan: plan_rows,
     })
 }
-
-

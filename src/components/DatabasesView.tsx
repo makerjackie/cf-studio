@@ -3,8 +3,8 @@
 // D1 Databases listing page — auto-fetches from the Cloudflare API.
 // Clicking a row drills into DatabaseExplorer for schema inspection.
 
-import { useState, useEffect } from "react";
-import { RefreshCw, Database, Terminal, AlertCircle, Loader2, HardDrive, ChevronRight, History } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { RefreshCw, Database, Terminal, AlertCircle, Loader2, HardDrive, ChevronRight, History, Pin } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn, orderPinnedFirst } from "@/lib/utils";
 import { useAppStore } from "@/store/useAppStore";
 import { open as openUrl } from "@tauri-apps/plugin-shell";
 import { useD1Databases, type D1Database, invokeCloudflare } from "@/hooks/useCloudflare";
@@ -204,12 +205,16 @@ function EmptyState({ variant, message, onRefresh, accountId }: EmptyStateProps)
 
 interface DatabaseRowProps {
   db: D1Database;
+  pinned: boolean;
   onClick: (db: D1Database) => void;
+  onTogglePin: () => void;
 }
 
-function DatabaseRow({ db, onClick }: DatabaseRowProps) {
+function DatabaseRow({ db, pinned, onClick, onTogglePin }: DatabaseRowProps) {
+  const { t } = useI18n();
   const privacySettings = useAppStore(s => s.privacySettings);
   const blurDb = privacySettings.enabled && privacySettings.databaseNames;
+  const pinLabel = pinned ? t("common.unpinFromTop") : t("common.pinToTop");
 
   return (
     <TableRow
@@ -218,14 +223,41 @@ function DatabaseRow({ db, onClick }: DatabaseRowProps) {
     >
       {/* Name */}
       <TableCell className="font-medium text-foreground py-3.5">
-        <div className="flex items-center gap-2">
-          <Database size={13} strokeWidth={1.75} className="text-primary shrink-0" />
-          <span className={cn(
-            "truncate max-w-[200px]", 
-            blurDb && "blur-[4px] hover:blur-none transition-all duration-200 select-none hover:select-auto cursor-default"
-          )}>
-            {db.name}
-          </span>
+        <div className="grid grid-cols-[minmax(0,1fr)_1.75rem] items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Database size={13} strokeWidth={1.75} className="text-primary shrink-0" />
+            <span className={cn(
+              "truncate max-w-[200px]",
+              blurDb && "blur-[4px] hover:blur-none transition-all duration-200 select-none hover:select-auto cursor-default"
+            )}>
+              {db.name}
+            </span>
+          </div>
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={pinLabel}
+                  className={cn(
+                    "h-7 w-7 text-muted-foreground opacity-0 transition-all hover:text-foreground focus:opacity-100 group-hover:opacity-100",
+                    pinned && "bg-primary/10 text-primary opacity-100 hover:bg-primary/15 hover:text-primary"
+                  )}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTogglePin();
+                  }}
+                >
+                  <Pin size={13} strokeWidth={pinned ? 2.2 : 1.8} fill={pinned ? "currentColor" : "none"} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="text-xs">
+                {pinLabel}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </TableCell>
 
@@ -282,10 +314,17 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
   const { state, refresh } = useD1Databases();
   const activeAccount = useAppStore((s) => s.activeAccount);
   const enableD1History = useAppStore((s) => s.enableD1History);
+  const pinnedD1DatabaseIds = useAppStore((s) => s.pinnedD1DatabaseIds);
+  const togglePinnedD1Database = useAppStore((s) => s.togglePinnedD1Database);
   const isLoading = state.status === "loading" || state.status === "idle";
   const [hasProHistory, setHasProHistory] = useState(false);
   const [isPurchaseOpen, setIsPurchaseOpen] = useState(false);
   const { toast } = useToast();
+  const databases = state.status === "success" ? state.data : [];
+  const sortedDatabases = useMemo(
+    () => orderPinnedFirst(databases, pinnedD1DatabaseIds, (db) => db.uuid),
+    [databases, pinnedD1DatabaseIds]
+  );
 
   useEffect(() => {
     // Check if the Pro History module exists on disk (compilation check)
@@ -402,11 +441,11 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
             <EmptyState variant="api-error" message={state.message} onRefresh={refresh} />
           )}
 
-        {state.status === "success" && state.data.length === 0 && (
+        {state.status === "success" && databases.length === 0 && (
           <EmptyState variant="no-databases" onRefresh={refresh} />
         )}
 
-        {state.status === "success" && state.data.length > 0 && (
+        {state.status === "success" && databases.length > 0 && (
           <div className="rounded-lg border border-border overflow-hidden">
             <Table>
               <TableHeader>
@@ -422,8 +461,14 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {state.data.map((db) => (
-                  <DatabaseRow key={db.uuid} db={db} onClick={onSelect} />
+                {sortedDatabases.map((db) => (
+                  <DatabaseRow
+                    key={db.uuid}
+                    db={db}
+                    pinned={pinnedD1DatabaseIds.includes(db.uuid)}
+                    onClick={onSelect}
+                    onTogglePin={() => togglePinnedD1Database(db.uuid)}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -431,7 +476,7 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
             <div className="flex items-center gap-1.5 border-t border-border bg-muted/20 px-4 py-2">
               <Loader2 size={11} className="text-muted-foreground/40 hidden" />
               <span className="text-xs text-muted-foreground/60">
-                {t(state.data.length === 1 ? "d1.listFooterSingular" : "d1.listFooter", { count: state.data.length })}
+                {t(databases.length === 1 ? "d1.listFooterSingular" : "d1.listFooter", { count: databases.length })}
               </span>
             </div>
           </div>

@@ -62,5 +62,6 @@ pub async fn fetch_user_profile() -> Result<UserProfile, UserError> {
         return Err(UserError::Api("API returned success: false".into()));
     }
 
-    data.result.ok_or_else(|| UserError::Api("No user profile in response".into()))
+    data.result
+        .ok_or_else(|| UserError::Api("No user profile in response".into()))
 }

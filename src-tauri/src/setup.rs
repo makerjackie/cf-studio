@@ -1,9 +1,9 @@
 // CF Studio — In-App Setup Wizard (dependency checker + installer)
 
+use crate::shell_env::{login_shell, probe_command, with_user_path};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
-use crate::shell_env::{login_shell, probe_command, with_user_path};
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -80,10 +80,7 @@ fn emit_progress(app: &AppHandle, message: &str, pct: u8) {
 /// non-zero exit.
 async fn run_shell(command: &str) -> Result<String, SetupError> {
     let output = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", command])
-            .output()
-            .await?
+        Command::new("cmd").args(["/C", command]).output().await?
     } else {
         let (shell, login_flag) = login_shell();
         let command = with_user_path(command);
@@ -170,14 +167,26 @@ pub async fn install_dependencies(app: AppHandle) -> Result<(), SetupError> {
 
         #[cfg(target_os = "linux")]
         {
-            emit_progress(&app, "Automatic Node.js installation is not yet supported on Linux.", 0);
-            emit_progress(&app, "Please install Node.js (e.g., `sudo apt install nodejs`) and restart.", 0);
+            emit_progress(
+                &app,
+                "Automatic Node.js installation is not yet supported on Linux.",
+                0,
+            );
+            emit_progress(
+                &app,
+                "Please install Node.js (e.g., `sudo apt install nodejs`) and restart.",
+                0,
+            );
             return Err(SetupError::UnsupportedOs);
         }
 
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
-            emit_progress(&app, "Automatic Node.js installation is not supported on this OS.", 0);
+            emit_progress(
+                &app,
+                "Automatic Node.js installation is not supported on this OS.",
+                0,
+            );
             return Err(SetupError::UnsupportedOs);
         }
 
@@ -186,7 +195,11 @@ pub async fn install_dependencies(app: AppHandle) -> Result<(), SetupError> {
         {
             emit_progress(&app, "Verifying npm installation…", 50);
             if !is_available("npm").await {
-                emit_progress(&app, "Error: npm is still not found after installing Node.js.", 0);
+                emit_progress(
+                    &app,
+                    "Error: npm is still not found after installing Node.js.",
+                    0,
+                );
                 return Err(SetupError::Command(
                     "npm was not found after Node.js installation. You may need to restart the app."
                         .into(),

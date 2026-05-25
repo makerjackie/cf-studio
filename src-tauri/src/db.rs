@@ -18,17 +18,18 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
     std::fs::create_dir_all(&app_dir).map_err(|e| e.to_string())?;
 
     let db_path = app_dir.join("query_history.db");
-    let conn = Connection::open(&db_path)
-        .map_err(|e| format!("Failed to open SQLite database: {}", e))?;
+    let conn =
+        Connection::open(&db_path).map_err(|e| format!("Failed to open SQLite database: {}", e))?;
 
     // Performance pragmas
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
          PRAGMA synchronous  = NORMAL;
-         PRAGMA foreign_keys = ON;"
-    ).map_err(|e| e.to_string())?;
+         PRAGMA foreign_keys = ON;",
+    )
+    .map_err(|e| e.to_string())?;
 
-    // The basic table schema remains in the core to avoid breaking the DB 
+    // The basic table schema remains in the core to avoid breaking the DB
     // initialization if the pro module is absent.
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS query_history (
@@ -51,8 +52,9 @@ pub fn init_db(app: &AppHandle) -> Result<DbState, String> {
             worker_url   TEXT NOT NULL,
             auth_secret  TEXT NOT NULL,
             last_used    DATETIME DEFAULT CURRENT_TIMESTAMP
-        );"
-    ).map_err(|e| e.to_string())?;
+        );",
+    )
+    .map_err(|e| e.to_string())?;
 
     println!("Database initialized at: {:?}", db_path);
 
