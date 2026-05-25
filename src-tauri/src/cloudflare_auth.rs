@@ -9,6 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::cloudflare_client::{CfError, CfResponse, CloudflareClient};
+use crate::shell_env::{login_shell, with_user_path};
 
 // ── Error type ─────────────────────────────────────────────────────────────────
 
@@ -268,8 +269,10 @@ pub async fn refresh_wrangler_token() -> Result<CloudflareCredentials, AuthError
             c.args(["/c", "npx", "wrangler", "d1", "list"]);
             c
         } else {
-            let mut c = std::process::Command::new("npx");
-            c.args(["wrangler", "d1", "list"]);
+            let (shell, login_flag) = login_shell();
+            let mut c = std::process::Command::new(shell);
+            let command = with_user_path("npx wrangler d1 list");
+            c.args([login_flag, "-c", &command]);
             c
         };
 

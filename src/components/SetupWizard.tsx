@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/lib/i18n";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ interface SetupWizardProps {
 }
 
 export function SetupWizard({ children }: SetupWizardProps) {
+  const { t } = useI18n();
   const [phase, setPhase] = useState<Phase>("checking");
   const [status, setStatus] = useState<DependencyStatus | null>(null);
   const [progress, setProgress] = useState(0);
@@ -117,14 +119,14 @@ export function SetupWizard({ children }: SetupWizardProps) {
           <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
             <CloudCog size={22} className="text-primary" strokeWidth={1.75} />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold text-foreground tracking-tight">
-              CF Studio Setup
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              Required tools for full functionality
-            </p>
-          </div>
+              <div>
+                <h1 className="text-lg font-semibold text-foreground tracking-tight">
+                  {t("setup.title")}
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  {t("setup.subtitle")}
+                </p>
+              </div>
         </div>
 
         {/* ── Phase: Checking ─────────────────────────────────────── */}
@@ -136,7 +138,7 @@ export function SetupWizard({ children }: SetupWizardProps) {
               strokeWidth={2}
             />
             <p className="text-sm text-muted-foreground">
-              Checking installed dependencies…
+              {t("setup.checking")}
             </p>
           </div>
         )}
@@ -147,12 +149,12 @@ export function SetupWizard({ children }: SetupWizardProps) {
             {/* Dependency list */}
             <div className="space-y-3 mb-6">
               <DepRow
-                label="Node.js / npm"
+                label={t("setup.nodeNpm")}
                 icon={Terminal}
                 installed={status.npm_installed}
               />
               <DepRow
-                label="Cloudflare Wrangler"
+                label={t("setup.wrangler")}
                 icon={CloudCog}
                 installed={status.wrangler_installed}
               />
@@ -164,20 +166,11 @@ export function SetupWizard({ children }: SetupWizardProps) {
               onClick={handleInstall}
             >
               <Download size={16} />
-              Install Required Tools
+              {t("setup.install")}
             </Button>
 
             <p className="mt-3 text-center text-[11px] text-muted-foreground/60">
-              On macOS this requires{" "}
-              <a
-                href="https://brew.sh"
-                target="_blank"
-                rel="noreferrer"
-                className="underline hover:text-muted-foreground transition-colors"
-              >
-                Homebrew
-              </a>
-              . On Windows it uses winget.
+              {t("setup.installNote")}
             </p>
           </>
         )}
@@ -214,7 +207,7 @@ export function SetupWizard({ children }: SetupWizardProps) {
                 strokeWidth={2}
               />
               <span className="text-xs">
-                This may take a few minutes — please don't close the app.
+                {t("setup.installingNote")}
               </span>
             </div>
           </div>
@@ -225,7 +218,7 @@ export function SetupWizard({ children }: SetupWizardProps) {
           <div className="space-y-4">
             <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
               <p className="text-sm text-destructive font-medium mb-1">
-                Installation failed
+                {t("setup.failed")}
               </p>
               <p className="text-xs text-destructive/80 break-words">
                 {errorMsg}
@@ -238,7 +231,7 @@ export function SetupWizard({ children }: SetupWizardProps) {
               onClick={handleInstall}
             >
               <Download size={16} />
-              Retry Installation
+              {t("setup.retry")}
             </Button>
           </div>
         )}

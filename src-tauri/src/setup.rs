@@ -3,6 +3,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::process::Command;
+use crate::shell_env::{login_shell, probe_command, with_user_path};
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -41,18 +42,6 @@ impl Serialize for SetupError {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/// Resolve the correct login shell for the current platform.
-/// macOS defaults to zsh; Linux falls back to $SHELL or /bin/bash.
-fn login_shell() -> (&'static str, &'static str) {
-    if cfg!(target_os = "macos") {
-        // macOS: use zsh with login flag to load ~/.zshrc / ~/.zprofile
-        ("zsh", "-l")
-    } else {
-        // Linux: honour $SHELL, fall back to bash
-        ("bash", "-l")
-    }
-}
-
 /// Returns `true` when the given binary is reachable on PATH.
 async fn is_available(bin: &str) -> bool {
     let cmd = if cfg!(target_os = "windows") {
@@ -64,11 +53,7 @@ async fn is_available(bin: &str) -> bool {
             .await
     } else {
         let (shell, login_flag) = login_shell();
-        // Prepend the user-local npm-global bin dir so we can discover
-        // binaries installed via our custom npm prefix without a shell restart.
-        let probe = format!(
-            "export PATH=\"$HOME/.npm-global/bin:$PATH\" && {bin} --version"
-        );
+        let probe = probe_command(bin);
         Command::new(shell)
             .args([login_flag, "-c", &probe])
             .stdout(std::process::Stdio::null())
@@ -101,8 +86,9 @@ async fn run_shell(command: &str) -> Result<String, SetupError> {
             .await?
     } else {
         let (shell, login_flag) = login_shell();
+        let command = with_user_path(command);
         Command::new(shell)
-            .args([login_flag, "-c", command])
+            .args([login_flag, "-c", &command])
             .output()
             .await?
     };

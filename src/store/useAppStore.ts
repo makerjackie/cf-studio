@@ -30,6 +30,8 @@ export interface PrivacySettings {
   blurAmount: number;
 }
 
+export type AppLanguage = "en-US" | "zh-CN";
+
 // ── KV placeholder type (populated in a future step) ─────────────────────────
 
 export interface KVNamespace {
@@ -66,6 +68,7 @@ interface AppState {
   autoUpdate: boolean;
   isRefreshingSession: boolean;
   privacySettings: PrivacySettings;
+  language: AppLanguage;
   saveQueryResultsEnabled: boolean;
   saveQueryResultsRowLimit: number | null;
 
@@ -104,6 +107,7 @@ interface AppState {
   setShowTableColumnCounts: (show: boolean) => void;
   setAutoUpdate: (enabled: boolean) => void;
   setPrivacySettings: (settings: Partial<PrivacySettings>) => void;
+  setLanguage: (language: AppLanguage) => void;
   setSaveQueryResultsEnabled: (enabled: boolean) => void;
   setSaveQueryResultsRowLimit: (limit: number | null) => void;
   setSessionId: (id: string) => void;
@@ -162,6 +166,7 @@ export const useAppStore = create<AppState>()(
         r2FileNames: true,
         blurAmount: 5,
       },
+      language: "en-US",
       saveQueryResultsEnabled: false,
       saveQueryResultsRowLimit: 50,
       updateStatus: "idle",
@@ -189,6 +194,7 @@ export const useAppStore = create<AppState>()(
       setShowTableColumnCounts: (show) => set({ showTableColumnCounts: show }),
       setAutoUpdate: (enabled) => set({ autoUpdate: enabled }),
       setPrivacySettings: (settings) => set((s) => ({ privacySettings: { ...s.privacySettings, ...settings } })),
+      setLanguage: (language) => set({ language }),
       setSaveQueryResultsEnabled: (enabled) => set({ saveQueryResultsEnabled: enabled }),
       setSaveQueryResultsRowLimit: (limit) => set({ saveQueryResultsRowLimit: limit }),
       setSessionId: (id) => set({ sessionId: id }),
@@ -281,6 +287,7 @@ export const useAppStore = create<AppState>()(
         tableDensity: state.tableDensity,
         autoUpdate: state.autoUpdate,
         privacySettings: state.privacySettings,
+        language: state.language,
         saveQueryResultsEnabled: state.saveQueryResultsEnabled,
         saveQueryResultsRowLimit: state.saveQueryResultsRowLimit,
         databases: state.databases,

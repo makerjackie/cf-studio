@@ -48,8 +48,11 @@ import {
   DialogDescription,
   DialogTrigger 
 } from "@/components/ui/dialog";
+import { useI18n } from "@/lib/i18n";
+import type { AppLanguage } from "@/store/useAppStore";
 
 export function SettingsView() {
+  const { language, setLanguage, t } = useI18n();
   const { theme, setTheme } = useTheme();
   const userProfile = useAppStore(s => s.userProfile);
   const cloudflareAccountId = useAppStore(s => s.cloudflareAccountId);
@@ -153,38 +156,38 @@ export function SettingsView() {
     <ScrollArea className="h-full">
       <div className="max-w-5xl mx-auto py-8 px-6 space-y-8">
         <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-          <p className="text-muted-foreground">Manage your application preferences and Cloudflare connection.</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t("settings.title")}</h1>
+          <p className="text-muted-foreground">{t("settings.subtitle")}</p>
         </div>
         
         <Tabs defaultValue="general" className="flex flex-col md:flex-row gap-10">
           <TabsList className="flex md:flex-col h-auto justify-start bg-transparent space-y-1 p-0 w-full md:w-56 shrink-0">
             <TabsTrigger value="general" className="w-full justify-start gap-2 h-10 px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all">
               <Settings2 size={16} />
-              General
+              {t("settings.general")}
             </TabsTrigger>
             <TabsTrigger value="appearance" className="w-full justify-start gap-2 h-10 px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all">
               <Palette size={16} />
-              Appearance
+              {t("settings.appearance")}
             </TabsTrigger>
             <TabsTrigger value="d1" className="w-full justify-start gap-2 h-10 px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all">
               <Database size={16} />
-              D1 Database
+              {t("settings.d1")}
             </TabsTrigger>
             <TabsTrigger value="privacy" className="w-full justify-start gap-2 h-10 px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all">
               <Shield size={16} />
-              Privacy
+              {t("settings.privacy")}
             </TabsTrigger>
             <TabsTrigger value="updates" className="w-full justify-start gap-2 h-10 px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all relative">
               <Download size={16} />
-              Updates
+              {t("settings.updates")}
               {status === "available" && (
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-primary rounded-full animate-pulse" />
               )}
             </TabsTrigger>
             <TabsTrigger value="about" className="w-full justify-start gap-2 h-10 px-4 data-[state=active]:bg-primary/10 data-[state=active]:text-primary transition-all">
               <Info size={16} />
-              About
+              {t("settings.about")}
             </TabsTrigger>
           </TabsList>
 
@@ -195,9 +198,9 @@ export function SettingsView() {
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2 mb-1">
                     <Globe size={18} className="text-primary" />
-                    <CardTitle className="text-lg">Cloudflare Account</CardTitle>
+                    <CardTitle className="text-lg">{t("settings.cloudflareAccount")}</CardTitle>
                   </div>
-                  <CardDescription>Configure how CF Studio connects to your Cloudflare infrastructure.</CardDescription>
+                  <CardDescription>{t("settings.cloudflareAccountDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="flex items-center justify-between p-5 border border-border/50 rounded-xl bg-background/50 backdrop-blur-sm">
@@ -206,13 +209,13 @@ export function SettingsView() {
                         <Zap size={20} />
                       </div>
                       <div>
-                        <p className="text-sm font-semibold">Wrangler Session</p>
-                        <p className="text-xs text-muted-foreground">Connected via local CLI configuration</p>
+                        <p className="text-sm font-semibold">{t("settings.wranglerSession")}</p>
+                        <p className="text-xs text-muted-foreground">{t("settings.wranglerSessionDesc")}</p>
                       </div>
                     </div>
                     <Button variant="secondary" size="sm" onClick={handleRefreshConnection} disabled={isRefreshing} className="h-8">
                       <RefreshCw className={cn("mr-2 h-3.5 w-3.5", isRefreshing && "animate-spin")} />
-                      Refresh Token
+                      {t("settings.refreshToken")}
                     </Button>
                   </div>
 
@@ -220,19 +223,19 @@ export function SettingsView() {
                     <div className="space-y-2.5">
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <User size={14} />
-                        <Label className="text-xs font-semibold uppercase tracking-wider">Account ID</Label>
+                        <Label className="text-xs font-semibold uppercase tracking-wider">{t("settings.accountId")}</Label>
                       </div>
                       <div className="group relative px-3 py-2 text-sm bg-background border border-border/50 rounded-lg font-mono truncate select-all h-10 flex items-center transition-colors hover:border-primary/30">
-                        {activeAccount?.id || cloudflareAccountId || "Not available"}
+                        {activeAccount?.id || cloudflareAccountId || t("settings.notAvailable")}
                       </div>
                     </div>
                     <div className="space-y-2.5">
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Mail size={14} />
-                        <Label className="text-xs font-semibold uppercase tracking-wider">User Email</Label>
+                        <Label className="text-xs font-semibold uppercase tracking-wider">{t("settings.userEmail")}</Label>
                       </div>
                       <div className="px-3 py-2 text-sm bg-background border border-border/50 rounded-lg font-mono truncate h-10 flex items-center">
-                        {userProfile?.email || "Fetching..."}
+                        {userProfile?.email || t("settings.fetching")}
                       </div>
                     </div>
                   </div>
@@ -241,13 +244,27 @@ export function SettingsView() {
 
               <Card className="border-none shadow-md bg-muted/20">
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-lg">App Behavior</CardTitle>
+                  <CardTitle className="text-lg">{t("settings.appBehavior")}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-5">
+                  <div className="flex items-center justify-between gap-6 py-2">
+                    <div className="space-y-1">
+                      <Label className="text-sm font-medium">{t("settings.language")}</Label>
+                      <p className="text-xs text-muted-foreground">{t("settings.languageDesc")}</p>
+                    </div>
+                    <select
+                      value={language}
+                      onChange={(event) => setLanguage(event.target.value as AppLanguage)}
+                      className="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="en-US">{t("settings.english")}</option>
+                      <option value="zh-CN">{t("settings.chinese")}</option>
+                    </select>
+                  </div>
                   <div className="flex items-center justify-between py-2">
                     <div className="space-y-1">
-                      <Label className="text-sm font-medium">Automatic Updates</Label>
-                      <p className="text-xs text-muted-foreground">Download and install updates automatically on startup.</p>
+                      <Label className="text-sm font-medium">{t("settings.autoUpdates")}</Label>
+                      <p className="text-xs text-muted-foreground">{t("settings.autoUpdatesDesc")}</p>
                     </div>
                     <Switch checked={autoUpdate} onCheckedChange={setAutoUpdate} />
                   </div>
@@ -258,15 +275,15 @@ export function SettingsView() {
                 <CardHeader className="pb-4">
                   <div className="flex items-center gap-2 mb-1">
                     <LogOut size={18} className="text-red-500" />
-                    <CardTitle className="text-lg text-red-500">Danger Zone</CardTitle>
+                    <CardTitle className="text-lg text-red-500">{t("settings.dangerZone")}</CardTitle>
                   </div>
-                  <CardDescription>Actions that affect your session and local data.</CardDescription>
+                  <CardDescription>{t("settings.dangerZoneDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between p-4 border border-red-500/20 rounded-xl bg-red-500/5">
                     <div className="space-y-1">
-                      <p className="text-sm font-semibold text-red-600 dark:text-red-400">Sign Out</p>
-                      <p className="text-xs text-muted-foreground">Log out from Cloudflare and clear all local cache.</p>
+                      <p className="text-sm font-semibold text-red-600 dark:text-red-400">{t("settings.signOut")}</p>
+                      <p className="text-xs text-muted-foreground">{t("settings.signOutDesc")}</p>
                     </div>
                     <Button 
                       variant="destructive" 
@@ -280,7 +297,7 @@ export function SettingsView() {
                       ) : (
                         <LogOut className="mr-2 h-4 w-4" />
                       )}
-                      Log Out
+                      {t("settings.signOut")}
                     </Button>
                   </div>
                 </CardContent>

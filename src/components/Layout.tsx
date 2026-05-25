@@ -34,6 +34,7 @@ import {
 } from "@/store/useAppStore";
 import { invokeCloudflare, useCloudflareAccounts } from "@/hooks/useCloudflare";
 import { useRemoteConfig } from "@/pro_modules/frontend/useRemoteConfig";
+import { useI18n } from "@/lib/i18n";
 import { AuditZoneProvider } from "@/pro_modules/frontend/AuditZoneContext";
 import { SecurityPosture } from "@/pro_modules/ui/audits/SecurityPosture";
 import { PerformancePosture } from "@/pro_modules/ui/audits/PerformancePosture";
@@ -56,52 +57,6 @@ interface NavItem {
   disabled?: boolean;
   badge?: string;
 }
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "Storage & Data",
-    items: [
-      {
-        id: "r2",
-        label: "R2 Buckets",
-        icon: Box,
-      },
-      { id: "d1", label: "Databases (D1)", icon: Database },
-      {
-        id: "kv",
-        label: "KV Namespaces",
-        icon: KeyRound,
-        disabled: true,
-        badge: "Soon",
-      },
-    ],
-  },
-  {
-    label: "Compute",
-    items: [
-      {
-        id: "vectorize",
-        label: "Vectorize",
-        icon: Activity,
-        disabled: true,
-        badge: "Soon",
-      },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      {
-        id: "logs",
-        label: "Workers Logs",
-        icon: ScrollText,
-        disabled: true,
-        badge: "Soon",
-      },
-      { id: "settings", label: "Settings", icon: Settings },
-    ],
-  },
-];
 
 const THEME_OPTIONS: {
   value: Theme;
@@ -388,6 +343,7 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
 
 // ── Simple page router ────────────────────────────────────────────────────────
 function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (id: string) => void }) {
+  const { t } = useI18n();
   if (activeId === "d1") return <DatabasesView />;
   if (activeId === "r2") return <R2BucketsView />;
   if (activeId === "settings") return <SettingsView />;
@@ -401,15 +357,15 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
   if (activeId.startsWith("audit")) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center gap-2">
-        <p className="text-muted-foreground text-sm">Audit view coming soon</p>
+        <p className="text-muted-foreground text-sm">{t("common.auditComingSoon")}</p>
       </div>
     );
   }
 
   // KV and Settings views will be added in subsequent steps
   return (
-    <div className="flex flex-col items-center justify-center h-full text-center gap-2">
-      <p className="text-muted-foreground text-sm">Coming soon</p>
+      <div className="flex flex-col items-center justify-center h-full text-center gap-2">
+      <p className="text-muted-foreground text-sm">{t("common.comingSoon")}</p>
     </div>
   );
 }
@@ -417,6 +373,7 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
 // ── Layout ─────────────────────────────────────────────────────────────────────
 
 export function Layout() {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
   const [activeId, setActiveId] = useState("r2");
   const userProfile = useAppStore((s) => s.userProfile);
@@ -425,22 +382,62 @@ export function Layout() {
   const { data: config } = useRemoteConfig();
 
   const navGroups = useMemo(() => {
-    const groups = [...NAV_GROUPS];
+    const groups: NavGroup[] = [
+      {
+        label: t("nav.storageData"),
+        items: [
+          { id: "r2", label: t("nav.r2"), icon: Box },
+          { id: "d1", label: t("nav.d1"), icon: Database },
+          {
+            id: "kv",
+            label: t("nav.kv"),
+            icon: KeyRound,
+            disabled: true,
+            badge: t("common.soon"),
+          },
+        ],
+      },
+      {
+        label: t("nav.compute"),
+        items: [
+          {
+            id: "vectorize",
+            label: t("nav.vectorize"),
+            icon: Activity,
+            disabled: true,
+            badge: t("common.soon"),
+          },
+        ],
+      },
+      {
+        label: t("nav.system"),
+        items: [
+          {
+            id: "logs",
+            label: t("nav.workersLogs"),
+            icon: ScrollText,
+            disabled: true,
+            badge: t("common.soon"),
+          },
+          { id: "settings", label: t("nav.settings"), icon: Settings },
+        ],
+      },
+    ];
     if (config?.enable_audits) {
       groups.splice(1, 0, {
-        label: "Audit & Optimization",
+        label: t("nav.audit"),
         items: [
-          { id: "audit", label: "Overview", icon: Globe },
-          { id: "audit-scanner", label: "Domain Scanner", icon: ScanSearch },
-          { id: "audit-security", label: "Security Posture", icon: Shield },
-          { id: "audit-performance", label: "Performance", icon: Zap },
-          { id: "audit-dns", label: "DNS & Email", icon: Mail },
-          { id: "audit-preferences", label: "Preferences", icon: Settings },
+          { id: "audit", label: t("nav.auditOverview"), icon: Globe },
+          { id: "audit-scanner", label: t("nav.domainScanner"), icon: ScanSearch },
+          { id: "audit-security", label: t("nav.securityPosture"), icon: Shield },
+          { id: "audit-performance", label: t("nav.performance"), icon: Zap },
+          { id: "audit-dns", label: t("nav.dnsEmail"), icon: Mail },
+          { id: "audit-preferences", label: t("nav.preferences"), icon: Settings },
         ],
       });
     }
     return groups;
-  }, [config?.enable_audits]);
+  }, [config?.enable_audits, t]);
 
   useCloudflareAccounts();
 

@@ -5,6 +5,7 @@ pub mod cloudflare_client;
 pub mod d1;
 pub mod r2;
 pub mod setup;
+pub mod shell_env;
 pub mod user;
 pub mod db;
 
