@@ -1,12 +1,17 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::sync::{LazyLock, Mutex};
 
 use futures_util::StreamExt;
-use reqwest::header::{CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE};
+use hmac::{Hmac, Mac};
+use reqwest::header::{
+    HeaderMap, HeaderName, HeaderValue, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE,
+};
+use reqwest::Method;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 use crate::cloudflare_auth::read_credentials;
@@ -17,6 +22,10 @@ static CANCELLED_UPLOADS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 static CANCELLED_DOWNLOADS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
+
+const R2_MULTIPART_THRESHOLD_BYTES: u64 = 100 * 1024 * 1024;
+const R2_MULTIPART_PART_SIZE_BYTES: u64 = 16 * 1024 * 1024;
+const R2_MULTIPART_PART_RETRIES: usize = 2;
 
 #[derive(Clone, serde::Serialize)]
 struct R2UploadProgress {
@@ -36,6 +45,23 @@ struct R2DownloadProgress {
     bytes_received: u64,
     total_bytes: u64,
     progress: f64,
+}
+
+#[derive(Clone)]
+struct R2S3Credentials {
+    access_key_id: String,
+    secret_access_key: String,
+    session_token: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct R2TempCredentialsResult {
+    #[serde(rename = "accessKeyId")]
+    access_key_id: String,
+    #[serde(rename = "secretAccessKey")]
+    secret_access_key: String,
+    #[serde(rename = "sessionToken")]
+    session_token: Option<String>,
 }
 
 fn clear_cancelled_upload(upload_id: &str) {
@@ -116,6 +142,145 @@ fn emit_download_progress(
     );
 }
 
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
+fn hmac_sha256(key: &[u8], value: &str) -> Vec<u8> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).expect("HMAC accepts any key length");
+    mac.update(value.as_bytes());
+    mac.finalize().into_bytes().to_vec()
+}
+
+fn aws_signing_key(secret_access_key: &str, date: &str) -> Vec<u8> {
+    let date_key = hmac_sha256(format!("AWS4{secret_access_key}").as_bytes(), date);
+    let region_key = hmac_sha256(&date_key, "auto");
+    let service_key = hmac_sha256(&region_key, "s3");
+    hmac_sha256(&service_key, "aws4_request")
+}
+
+fn s3_encode_path_segment(value: &str) -> String {
+    urlencoding::encode(value).into_owned()
+}
+
+fn s3_canonical_uri(bucket_name: &str, key: &str) -> String {
+    let encoded_key = key
+        .split('/')
+        .map(s3_encode_path_segment)
+        .collect::<Vec<_>>()
+        .join("/");
+    format!("/{}/{}", s3_encode_path_segment(bucket_name), encoded_key)
+}
+
+fn trim_header_value(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn xml_text(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn xml_unescape_text(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+fn extract_xml_tag(text: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = text.find(&open)? + open.len();
+    let end = text[start..].find(&close)? + start;
+    Some(xml_unescape_text(&text[start..end]))
+}
+
+fn signed_s3_headers(
+    credentials: &R2S3Credentials,
+    method: &Method,
+    host: &str,
+    canonical_uri: &str,
+    canonical_query: &str,
+    payload_hash: &str,
+    extra_headers: BTreeMap<String, String>,
+) -> Result<HeaderMap, String> {
+    let now = chrono::Utc::now();
+    let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
+    let date = now.format("%Y%m%d").to_string();
+    let credential_scope = format!("{date}/auto/s3/aws4_request");
+
+    let mut headers = BTreeMap::new();
+    headers.insert("host".to_string(), host.to_string());
+    headers.insert("x-amz-content-sha256".to_string(), payload_hash.to_string());
+    headers.insert("x-amz-date".to_string(), amz_date);
+    if let Some(session_token) = credentials.session_token.as_ref() {
+        headers.insert(
+            "x-amz-security-token".to_string(),
+            session_token.to_string(),
+        );
+    }
+    for (key, value) in extra_headers {
+        let value = value.trim();
+        if !value.is_empty() {
+            headers.insert(key.to_ascii_lowercase(), value.to_string());
+        }
+    }
+
+    let canonical_headers = headers
+        .iter()
+        .map(|(key, value)| format!("{key}:{}\n", trim_header_value(value)))
+        .collect::<String>();
+    let signed_headers = headers.keys().cloned().collect::<Vec<_>>().join(";");
+    let canonical_request = format!(
+        "{}\n{canonical_uri}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}",
+        method.as_str()
+    );
+    let canonical_request_hash = sha256_hex(canonical_request.as_bytes());
+    let string_to_sign = format!(
+        "AWS4-HMAC-SHA256\n{}\n{credential_scope}\n{canonical_request_hash}",
+        headers
+            .get("x-amz-date")
+            .ok_or_else(|| "Missing x-amz-date.".to_string())?
+    );
+    let signing_key = aws_signing_key(&credentials.secret_access_key, &date);
+    let signature = hex::encode(hmac_sha256(&signing_key, &string_to_sign));
+    let authorization = format!(
+        "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
+        credentials.access_key_id
+    );
+
+    let mut header_map = HeaderMap::new();
+    for (key, value) in headers {
+        let header_name = HeaderName::from_bytes(key.as_bytes()).map_err(|err| err.to_string())?;
+        let header_value = HeaderValue::from_str(&value).map_err(|err| err.to_string())?;
+        header_map.insert(header_name, header_value);
+    }
+    header_map.insert(
+        HeaderName::from_static("authorization"),
+        HeaderValue::from_str(&authorization).map_err(|err| err.to_string())?,
+    );
+    Ok(header_map)
+}
+
+async fn read_file_part(path: &str, offset: u64, size: u64) -> Result<Vec<u8>, String> {
+    let mut file = tokio::fs::File::open(path)
+        .await
+        .map_err(|e| format!("Failed to open local file: {e}"))?;
+    file.seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|e| format!("Failed to seek local file: {e}"))?;
+    let mut buffer = vec![0u8; size as usize];
+    file.read_exact(&mut buffer)
+        .await
+        .map_err(|e| format!("Failed to read local file part: {e}"))?;
+    Ok(buffer)
+}
+
 fn api_errors_to_string(errors: &[CfError]) -> String {
     errors
         .iter()
@@ -139,6 +304,91 @@ async fn client_and_account() -> Result<(CloudflareClient, String), String> {
     };
 
     Ok((client, account_id))
+}
+
+async fn current_token_id(client: &CloudflareClient) -> Result<String, String> {
+    let resp = client
+        .get("user/tokens/verify")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(format!(
+            "R2 multipart upload needs a verifiable Cloudflare R2 API token with R2 object write access. HTTP {status}: {text}"
+        ));
+    }
+
+    let envelope: CfResponse<Value> = serde_json::from_str(&text).map_err(|err| {
+        format!("Failed to parse Cloudflare token verification response: {err}. Body: {text}")
+    })?;
+
+    if !envelope.success {
+        return Err(api_errors_to_string(&envelope.errors));
+    }
+
+    envelope
+        .result
+        .and_then(|value| {
+            value
+                .get("id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .ok_or_else(|| {
+            "Cloudflare did not return a token id for temporary R2 credentials.".to_string()
+        })
+}
+
+async fn create_r2_temp_credentials(
+    client: &CloudflareClient,
+    account_id: &str,
+    bucket_name: &str,
+    key: &str,
+) -> Result<R2S3Credentials, String> {
+    let parent_access_key_id = current_token_id(client).await?;
+    let endpoint = format!("accounts/{account_id}/r2/temp-access-credentials");
+    let resp = client
+        .post(&endpoint)
+        .json(&json!({
+            "bucket": bucket_name,
+            "parentAccessKeyId": parent_access_key_id,
+            "permission": "object-read-write",
+            "ttlSeconds": 3600,
+            "objects": [key],
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+
+    if !status.is_success() {
+        return Err(format!(
+            "Create R2 temporary S3 credentials failed with HTTP {status}: {text}"
+        ));
+    }
+
+    let envelope: CfResponse<R2TempCredentialsResult> =
+        serde_json::from_str(&text).map_err(|err| {
+            format!("Failed to parse R2 temporary credentials response: {err}. Body: {text}")
+        })?;
+
+    if !envelope.success {
+        return Err(api_errors_to_string(&envelope.errors));
+    }
+
+    let result = envelope
+        .result
+        .ok_or_else(|| "Cloudflare did not return R2 temporary S3 credentials.".to_string())?;
+
+    Ok(R2S3Credentials {
+        access_key_id: result.access_key_id,
+        secret_access_key: result.secret_access_key,
+        session_token: result.session_token,
+    })
 }
 
 async fn parse_empty_cf_response(resp: reqwest::Response, action: &str) -> Result<(), String> {
@@ -237,6 +487,20 @@ pub async fn upload_r2_object(
         .first_or_octet_stream()
         .to_string();
 
+    if total_bytes >= R2_MULTIPART_THRESHOLD_BYTES {
+        return upload_r2_object_multipart(
+            app,
+            bucket_name,
+            key,
+            local_path,
+            upload_id,
+            cache_control,
+            content_type,
+            total_bytes,
+        )
+        .await;
+    }
+
     let (client, account_id) = client_and_account().await?;
     let url = format!(
         "accounts/{account_id}/r2/buckets/{bucket_name}/objects/{}",
@@ -307,6 +571,259 @@ pub async fn upload_r2_object(
     }
     clear_cancelled_upload(&upload_id);
     result
+}
+
+async fn upload_r2_object_multipart(
+    app: AppHandle,
+    bucket_name: String,
+    key: String,
+    local_path: String,
+    upload_id: String,
+    cache_control: Option<String>,
+    content_type: String,
+    total_bytes: u64,
+) -> Result<(), String> {
+    let setup_result = async {
+        let creds = tokio::task::spawn_blocking(read_credentials)
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        let client = CloudflareClient::new(&creds.oauth_token).map_err(|e| e.to_string())?;
+        let account_id = match creds.account_id {
+            Some(id) => id,
+            None => resolve_account_id(&client)
+                .await
+                .map_err(|e| e.to_string())?,
+        };
+        let s3_credentials =
+            create_r2_temp_credentials(&client, &account_id, &bucket_name, &key).await?;
+        Ok::<_, String>((account_id, s3_credentials))
+    }
+    .await;
+
+    let (account_id, s3_credentials) = match setup_result {
+        Ok(value) => value,
+        Err(err) => {
+            clear_cancelled_upload(&upload_id);
+            return Err(err);
+        }
+    };
+    let s3_client = reqwest::Client::new();
+    let host = format!("{account_id}.r2.cloudflarestorage.com");
+    let canonical_uri = s3_canonical_uri(&bucket_name, &key);
+    let object_url = format!("https://{host}{canonical_uri}");
+
+    emit_upload_progress(&app, &upload_id, &bucket_name, &key, 0, total_bytes);
+
+    let empty_hash = sha256_hex(b"");
+    let mut init_extra_headers = BTreeMap::new();
+    init_extra_headers.insert("content-type".to_string(), content_type);
+    if let Some(cache_control) = cache_control.filter(|value| !value.trim().is_empty()) {
+        init_extra_headers.insert("cache-control".to_string(), cache_control);
+    }
+    let init_headers = match signed_s3_headers(
+        &s3_credentials,
+        &Method::POST,
+        &host,
+        &canonical_uri,
+        "uploads=",
+        &empty_hash,
+        init_extra_headers,
+    ) {
+        Ok(headers) => headers,
+        Err(err) => {
+            clear_cancelled_upload(&upload_id);
+            return Err(err);
+        }
+    };
+    let init_resp = s3_client
+        .post(format!("{object_url}?uploads="))
+        .headers(init_headers)
+        .body(Vec::new())
+        .send()
+        .await
+        .map_err(|e| format!("Failed to start multipart upload: {e}"))?;
+    let init_status = init_resp.status();
+    let init_text = init_resp.text().await.unwrap_or_default();
+    if !init_status.is_success() {
+        clear_cancelled_upload(&upload_id);
+        return Err(format!(
+            "Start multipart upload failed with HTTP {init_status}: {init_text}"
+        ));
+    }
+    let multipart_upload_id = match extract_xml_tag(&init_text, "UploadId") {
+        Some(id) => id,
+        None => {
+            clear_cancelled_upload(&upload_id);
+            return Err(format!(
+                "R2 did not return a multipart upload id: {init_text}"
+            ));
+        }
+    };
+
+    let upload_result = async {
+        let total_parts =
+            (total_bytes + R2_MULTIPART_PART_SIZE_BYTES - 1) / R2_MULTIPART_PART_SIZE_BYTES;
+        let mut completed_parts: Vec<(u64, String)> = Vec::new();
+        let mut uploaded_bytes = 0u64;
+
+        for part_number in 1..=total_parts {
+            if is_upload_cancelled(&upload_id) {
+                return Err("Upload canceled.".to_string());
+            }
+
+            let offset = (part_number - 1) * R2_MULTIPART_PART_SIZE_BYTES;
+            let part_size = (total_bytes - offset).min(R2_MULTIPART_PART_SIZE_BYTES);
+            let part_bytes = read_file_part(&local_path, offset, part_size).await?;
+            let part_payload_hash = sha256_hex(&part_bytes);
+            let query = format!(
+                "partNumber={part_number}&uploadId={}",
+                urlencoding::encode(&multipart_upload_id)
+            );
+            let part_url = format!("{object_url}?{query}");
+            let mut last_error: Option<String> = None;
+
+            for _attempt in 0..=R2_MULTIPART_PART_RETRIES {
+                if is_upload_cancelled(&upload_id) {
+                    return Err("Upload canceled.".to_string());
+                }
+                let part_headers = signed_s3_headers(
+                    &s3_credentials,
+                    &Method::PUT,
+                    &host,
+                    &canonical_uri,
+                    &query,
+                    &part_payload_hash,
+                    BTreeMap::new(),
+                )?;
+                let part_resp = s3_client
+                    .put(&part_url)
+                    .headers(part_headers)
+                    .body(part_bytes.clone())
+                    .send()
+                    .await;
+
+                match part_resp {
+                    Ok(resp) if resp.status().is_success() => {
+                        let etag = resp
+                            .headers()
+                            .get("etag")
+                            .and_then(|value| value.to_str().ok())
+                            .map(ToOwned::to_owned)
+                            .ok_or_else(|| {
+                                format!("Multipart part {part_number} uploaded without an ETag.")
+                            })?;
+                        completed_parts.push((part_number, etag));
+                        uploaded_bytes += part_size;
+                        emit_upload_progress(
+                            &app,
+                            &upload_id,
+                            &bucket_name,
+                            &key,
+                            uploaded_bytes,
+                            total_bytes,
+                        );
+                        last_error = None;
+                        break;
+                    }
+                    Ok(resp) => {
+                        let status = resp.status();
+                        let text = resp.text().await.unwrap_or_default();
+                        last_error = Some(format!(
+                            "Multipart part {part_number} failed with HTTP {status}: {text}"
+                        ));
+                    }
+                    Err(err) => {
+                        last_error =
+                            Some(format!("Multipart part {part_number} upload failed: {err}"));
+                    }
+                }
+            }
+
+            if let Some(error) = last_error {
+                return Err(error);
+            }
+        }
+
+        if is_upload_cancelled(&upload_id) {
+            return Err("Upload canceled.".to_string());
+        }
+
+        completed_parts.sort_by_key(|(part_number, _)| *part_number);
+        let complete_xml = format!(
+            "<CompleteMultipartUpload>{}</CompleteMultipartUpload>",
+            completed_parts
+                .iter()
+                .map(|(part_number, etag)| {
+                    format!(
+                        "<Part><PartNumber>{part_number}</PartNumber><ETag>{}</ETag></Part>",
+                        xml_text(etag)
+                    )
+                })
+                .collect::<String>()
+        );
+        let complete_hash = sha256_hex(complete_xml.as_bytes());
+        let complete_query = format!("uploadId={}", urlencoding::encode(&multipart_upload_id));
+        let mut complete_extra_headers = BTreeMap::new();
+        complete_extra_headers.insert("content-type".to_string(), "application/xml".to_string());
+        let complete_headers = signed_s3_headers(
+            &s3_credentials,
+            &Method::POST,
+            &host,
+            &canonical_uri,
+            &complete_query,
+            &complete_hash,
+            complete_extra_headers,
+        )?;
+        let complete_resp = s3_client
+            .post(format!("{object_url}?{complete_query}"))
+            .headers(complete_headers)
+            .body(complete_xml)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to complete multipart upload: {e}"))?;
+        let complete_status = complete_resp.status();
+        let complete_text = complete_resp.text().await.unwrap_or_default();
+        if !complete_status.is_success() {
+            return Err(format!(
+                "Complete multipart upload failed with HTTP {complete_status}: {complete_text}"
+            ));
+        }
+
+        emit_upload_progress(
+            &app,
+            &upload_id,
+            &bucket_name,
+            &key,
+            total_bytes,
+            total_bytes,
+        );
+        Ok(())
+    }
+    .await;
+
+    if upload_result.is_err() || is_upload_cancelled(&upload_id) {
+        let abort_hash = sha256_hex(b"");
+        let abort_query = format!("uploadId={}", urlencoding::encode(&multipart_upload_id));
+        if let Ok(abort_headers) = signed_s3_headers(
+            &s3_credentials,
+            &Method::DELETE,
+            &host,
+            &canonical_uri,
+            &abort_query,
+            &abort_hash,
+            BTreeMap::new(),
+        ) {
+            let _ = s3_client
+                .delete(format!("{object_url}?{abort_query}"))
+                .headers(abort_headers)
+                .send()
+                .await;
+        }
+    }
+
+    clear_cancelled_upload(&upload_id);
+    upload_result
 }
 
 #[tauri::command]
@@ -685,4 +1202,36 @@ pub async fn get_r2_bucket_domains_list(bucket_name: String) -> Result<Value, St
     };
 
     Ok(json!({ "managed": managed, "custom": custom }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sha256_hex_matches_known_value() {
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
+    #[test]
+    fn s3_canonical_uri_preserves_path_separators() {
+        assert_eq!(
+            s3_canonical_uri("my-bucket", "images/hello world+1.png"),
+            "/my-bucket/images/hello%20world%2B1.png"
+        );
+    }
+
+    #[test]
+    fn extract_xml_tag_unescapes_value() {
+        assert_eq!(
+            extract_xml_tag(
+                "<Root><UploadId>a&amp;b&lt;c&gt;</UploadId></Root>",
+                "UploadId"
+            ),
+            Some("a&b<c>".to_string())
+        );
+    }
 }

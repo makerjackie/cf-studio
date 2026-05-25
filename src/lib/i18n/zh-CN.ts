@@ -341,7 +341,7 @@ export const zhCN = {
     "r2.transferConcurrencyHelp": "允许同时运行的上传数量。大对象或慢网络建议保持较低数值。",
     "r2.retryCount": "每个对象重试次数",
     "r2.retryCountHelp": "上传失败后自动重试。主动取消的上传不会重试。",
-    "r2.uploadPathStatus": "本地文件上传会从磁盘流式读取，并通过单次 PUT 请求显示真实进度。断点续传 multipart 尚未启用；大对象断点续传需要 R2 S3 临时凭证。",
+    "r2.uploadPathStatus": "小中型本地文件会从磁盘流式读取并通过单次 PUT 上传。100 MB 及以上对象会使用 R2 S3 multipart、分片重试和真实进度；multipart 需要当前凭证是可校验的 R2 API token。",
     "r2.imageOptimization": "图片优化",
     "r2.imageOptimizationDesc": "上传前压缩、缩放或转换图片格式。不会修改本地原文件。",
     "r2.imageOptimizationHelp": "开启后，JPEG、PNG、WebP 会先在本地处理再上传。远程 URL 上传暂不做图片处理。",

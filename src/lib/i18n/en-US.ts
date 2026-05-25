@@ -341,7 +341,7 @@ export const enUS = {
     "r2.transferConcurrencyHelp": "How many uploads may run at the same time. Keep this low for large objects or slow networks.",
     "r2.retryCount": "Retries per object",
     "r2.retryCountHelp": "Automatically retry failed uploads. Cancelled uploads are not retried.",
-    "r2.uploadPathStatus": "Local file uploads stream from disk with single PUT requests and real progress. Resumable multipart upload is not enabled yet; large-object resumability needs R2 S3 temporary credentials.",
+    "r2.uploadPathStatus": "Small and medium local files stream from disk with single PUT requests. Objects at 100 MB or larger use R2 S3 multipart upload with part retries and real progress; multipart needs the current credential to be a verifiable R2 API token.",
     "r2.imageOptimization": "Image optimization",
     "r2.imageOptimizationDesc": "Compress, resize, or convert images before upload. Local originals are not modified.",
     "r2.imageOptimizationHelp": "When enabled, JPEG, PNG, and WebP files are processed locally before upload. Remote URL uploads are not image-processed yet.",
