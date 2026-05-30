@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "tauri-app",
+      "name": "cf-desk",
       "dependencies": {
         "@fontsource/google-sans-code": "^5.2.3",
         "@fontsource/google-sans-flex": "^5.2.2",

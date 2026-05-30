@@ -7,7 +7,7 @@ import appVersion from "../../package.json";
 
 export type UpdateStatus = "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
 
-const RELEASE_REPO = "makerjackie/cf-studio";
+const RELEASE_REPO = "makerjackie/cf-desk";
 const CHANGELOG_URL = `https://raw.githubusercontent.com/${RELEASE_REPO}/main/changelogs/changelogs.json`;
 
 export function useUpdater() {

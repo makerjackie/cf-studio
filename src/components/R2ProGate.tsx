@@ -1,7 +1,7 @@
 // R2ProGate.tsx
 //
 // Remote-config-driven feature gate for R2 pro actions.
-// Reads from https://pro.cfstudio.dev/config.json (same source as D1 export gate).
+// Reads the legacy remote config source used by the D1 export gate.
 //
 // Usage — declarative wrapper:
 //   <R2ProGate featureName="r2_upload">

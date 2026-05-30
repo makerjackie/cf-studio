@@ -269,7 +269,7 @@ export function QueuesView() {
                     <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{selectedQueueId}</p>
                   </div>
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => writeText(selectedQueueId ?? "", { label: "CF Studio" })}>
+                    <Button variant="outline" size="sm" onClick={() => writeText(selectedQueueId ?? "", { label: "CFDesk" })}>
                       <Clipboard size={14} className="mr-2" />
                       Copy ID
                     </Button>

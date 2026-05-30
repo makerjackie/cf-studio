@@ -30,7 +30,7 @@ import { useD1Tracker } from "@/hooks/useD1Tracker";
  */
 export async function invokeCloudflare<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
-    throw new Error("CF Studio desktop runtime is required to call Cloudflare APIs.");
+    throw new Error("CFDesk desktop runtime is required to call Cloudflare APIs.");
   }
 
   try {
@@ -51,7 +51,7 @@ export async function invokeCloudflare<T>(cmd: string, args?: Record<string, unk
         return invoke<T>(cmd, args); // Retry once after the other one finishes
       }
 
-      console.warn(`[CF Studio] Session expired (${cmd}). Negotiating fresh token...`);
+      console.warn(`[CFDesk] Session expired (${cmd}). Negotiating fresh token...`);
       store.setIsRefreshingSession(true);
 
       try {

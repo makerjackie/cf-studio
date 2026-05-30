@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CF-Studio",
+  "productName": "CFDesk",
   "version": "1.2.1",
-  "identifier": "dev.cfstudio.app",
+  "identifier": "com.01mvp.cfdesk",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CF Studio",
+        "title": "CFDesk",
         "width": 1200,
         "height": 800,
         "minWidth": 900,
@@ -32,7 +32,7 @@
   },
   "bundle": {
     "active": true,
-    "publisher": "CF Studio",
+    "publisher": "CFDesk",
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -46,7 +46,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/makerjackie/cf-studio/releases/latest"
+        "https://github.com/makerjackie/cf-desk/releases/latest"
       ],
       "dialog": false,
       "pubkey": ""

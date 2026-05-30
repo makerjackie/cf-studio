@@ -1059,10 +1059,10 @@ export function R2BucketsView() {
 
   const tryCopyText = useCallback(async (value: string) => {
     try {
-      await writeText(value, { label: "CF Studio" });
+      await writeText(value, { label: "CFDesk" });
       return true;
     } catch (err) {
-      console.warn("[CF Studio] Clipboard write failed:", err);
+      console.warn("[CFDesk] Clipboard write failed:", err);
       return false;
     }
   }, []);
@@ -1109,7 +1109,7 @@ export function R2BucketsView() {
     }).then((dispose) => {
       unsubscribeUpload = dispose;
     }).catch((err) => {
-      console.warn("[CF Studio] Could not listen for R2 upload progress:", err);
+      console.warn("[CFDesk] Could not listen for R2 upload progress:", err);
     });
     listen<R2DownloadProgressEvent>("r2-download-progress", (event) => {
       updateTransfer(event.payload.download_id, {
@@ -1120,7 +1120,7 @@ export function R2BucketsView() {
     }).then((dispose) => {
       unsubscribeDownload = dispose;
     }).catch((err) => {
-      console.warn("[CF Studio] Could not listen for R2 download progress:", err);
+      console.warn("[CFDesk] Could not listen for R2 download progress:", err);
     });
     return () => {
       unsubscribeUpload?.();
@@ -1246,7 +1246,7 @@ export function R2BucketsView() {
             try {
               return await optimizeUploadSource(source, currentUploadSettings);
             } catch (err) {
-              console.warn("[CF Studio] Image optimization failed:", err);
+              console.warn("[CFDesk] Image optimization failed:", err);
               return {
                 ...source,
                 processingNote: "optimize-failed",
@@ -1529,7 +1529,7 @@ export function R2BucketsView() {
         }
       })
       .catch((err) => {
-        console.warn("[CF Studio] Native file drop listener failed:", err);
+        console.warn("[CFDesk] Native file drop listener failed:", err);
       });
 
     return () => {

@@ -1,201 +1,110 @@
-# CF Studio
+# CFDesk
 
 Simplified Chinese README: [README.zh-CN.md](README.zh-CN.md).
 
-A blazing-fast, native desktop client for Cloudflare D1 and R2.
+CFDesk is a native desktop workspace for day-to-day Cloudflare operations. It focuses on remote resources: R2 assets, D1 databases, Workers, Queues, KV, token permissions, and low-risk operational checks.
+
+CFDesk is based on the MakerJackie fork of [CF Studio](https://github.com/mubashardev/cf-studio). We appreciate the original CF Studio work; this project keeps the useful desktop foundation and continues in a more remote-operations-focused direction.
+
+Website: [cfdesk.01mvp.com](https://cfdesk.01mvp.com)
+
+## What Changed Since April 18
+
+After the April 18 baseline, this fork moved beyond the original CF Studio scope in several areas:
+
+- Added Cloudflare API token onboarding, macOS Keychain storage, and token permission checks for D1, R2, KV, Workers, Queues, and analytics access.
+- Expanded English and Simplified Chinese localization across the main app surfaces.
+- Improved R2 into an asset workflow: cached listings, upload/download, image preview, public URL copy, public domain checks, transfer settings, multipart upload, and confirmation before destructive object actions.
+- Added a remote resource direction for KV, Workers, Queues, and account-level overviews instead of focusing only on D1/R2.
+- Added Workers quick actions, recent health signals, metrics, observability controls, settings inspection, and safer copy/open flows.
+- Added explicit confirmation around remote writes such as deletes, overwrites, Worker settings, secrets, routes, domains, and schedules.
+- Improved macOS app startup behavior for nvm, Wrangler, and Cloudflare token environment detection.
+- Updated release metadata, update checks, artifact naming, and public documentation for the MakerJackie fork.
+
+## Core Capabilities
+
+- **R2 asset management:** browse buckets, upload/download files, preview images, copy public URLs, and inspect public domain status.
+- **D1 database work:** browse databases, inspect tables, run SQL, view schemas, manage indexes, and export useful data formats.
+- **Workers operations:** list Workers, inspect deployments/settings, copy routes, open dashboard links, check recent health, and manage observability settings.
+- **KV and Queues visibility:** lightweight remote resource inspection and operational entry points.
+- **Token checks:** verify whether the current token can access the Cloudflare endpoints CFDesk needs.
+- **Privacy controls:** blur sensitive account, database, bucket, and object names during demos or screen shares.
+- **Local Explorer handoff:** link to Cloudflare's official Local Explorer for local `wrangler dev` bindings while CFDesk stays focused on remote account resources.
 
 ## Install / Update
 
-This MakerJackie fork publishes builds through [GitHub Releases](https://github.com/makerjackie/cf-studio/releases). For local development, use the commands in [README.zh-CN.md](README.zh-CN.md).
+This fork publishes builds through [GitHub Releases](https://github.com/makerjackie/cf-desk/releases). The release workflow builds the Tauri app from `main` when a release commit is pushed.
 
 ### macOS Gatekeeper
 
-This fork is currently distributed without Apple signing or notarization. If macOS blocks the app after installation, move `CF-Studio.app` to `/Applications`, then run:
+CFDesk is currently distributed without Apple signing or notarization. If macOS blocks the app after installation, move `CFDesk.app` to `/Applications`, then run:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/CF-Studio.app
+xattr -dr com.apple.quarantine /Applications/CFDesk.app
 ```
 
 Then open the app again from Finder or Spotlight.
 
-<div align="center">
-  <img src="screenshots/Terminal Look.png" width="800" alt="CF Studio installer in the terminal" />
-</div>
+## Local Development
 
-Managing Cloudflare Edge databases and storage shouldn't require juggling CLI commands or waiting for web dashboards to load. CF Studio provides a sleek, native GUI to manage your D1 databases and R2 buckets directly from your desktop.
+Prerequisites:
 
-The best part? **Zero configuration.** CF Studio automatically detects your local `wrangler` session. Open the app, and your resources are instantly available.
+- [Bun](https://bun.sh/)
+- [Rust](https://www.rust-lang.org/tools/install)
+- Cloudflare Wrangler CLI with either `wrangler login` or a scoped API token
 
----
+```bash
+git clone https://github.com/makerjackie/cf-desk.git
+cd cf-desk
+bun install
+bun tauri dev
+```
 
-## Features Overview
+For API token based development:
 
-### R2 Storage Explorer
-Complete management of your Cloudflare R2 buckets. Upload, download, and explore your objects with ease.
+```bash
+export CLOUDFLARE_API_TOKEN="your-token"
+export CLOUDFLARE_ACCOUNT_ID="your-account-id"
+bun tauri dev
+```
 
-<div align="center">
-  <img src="screenshots/1. R2 Buckets Dark.png" width="800" alt="R2 Buckets List" />
-  <p><em>R2 Buckets Management interface</em></p>
-</div>
+Recommended token permissions:
 
-#### Bucket Details & File Uploads
-Drill down into any bucket to manage its contents via a native file-explorer experience.
+```txt
+Account:Read
+D1:Read / D1:Edit
+R2 Storage:Read / R2 Storage:Edit
+Workers KV Storage:Read / Workers KV Storage:Edit
+Workers Scripts:Read / Workers Scripts:Edit
+Queues:Read / Queues:Edit
+Account Analytics:Read
+```
 
-<div align="center">
-  <img src="screenshots/1.1. Bucket Details Dark.png" width="400" />
-  <img src="screenshots/1.2. File Upload Dark.png" width="400" />
-</div>
+## Build
 
----
+```bash
+bun run build
+bun run tauri build
+```
 
-### D1 Database Management
-Explore your D1 databases with an intuitive listing and detailed table inspector.
+The macOS bundle is generated under:
 
-<div align="center">
-  <img src="screenshots/2. D1 Databases List Dark.png" width="450" />
-  <img src="screenshots/2.1. Database Details Dark.png" width="450" />
-</div>
+```bash
+src-tauri/target/release/bundle/macos/CFDesk.app
+```
 
-#### Interactive SQL Editor
-Run complex queries with a context-aware SQL editor. It suggests table names and columns from your actual schema as you type.
+## Project Site
 
-<div align="center">
-  <img src="screenshots/2.2. DB SQL Editor Dark.png" width="800" alt="SQL Editor" />
-</div>
-
-#### Visual Schema (ER Diagram)
-Visualize your database architecture instantly. The interactive ER diagram maps out table relationships and foreign key constraints.
-
-<div align="center">
-  <img src="screenshots/2.3. DB Visual Schema Dark.png" width="800" alt="Visual Schema" />
-</div>
-
-#### Index Management
-Manage your database performance with interactive index management. Create and delete indexes without writing a single line of SQL.
-
-<div align="center">
-  <img src="screenshots/2.4. DB Indexes Dark.png" width="450" />
-  <img src="screenshots/2.5. New Index Rows Estimate Dark.png" width="450" />
-</div>
-
-*Features a **One-time rows read estimate** to prevent heavy performance hits on production databases.*
-
----
-
-### Audit & Optimization
-Comprehensive domain health analysis and one-click optimization reports.
-
-<div align="center">
-  <img src="screenshots/3. audit-overview.png" width="800" alt="Audit Overview Report" />
-  <p><em>Holistic domain health dashboard with automated scoring</em></p>
-</div>
-
-#### Domain Health Posture
-Deep-dive into your infrastructure with granular reports on security, performance, and email deliverability.
-
-<div align="center">
-  <img src="screenshots/3.1. audit-security-posture.png" width="260" />
-  <img src="screenshots/3.2. audit-performance.png" width="260" />
-  <img src="screenshots/3.3. audit-email-dns.png" width="260" />
-</div>
-
-- **Security Posture**: Automated check for SSL/TLS versions, WAF configurations, and HTTPS rewrites.
-- **Performance Benchmarking**: Insights into Brotli compression, HTTP/3, Early Hints, and Tiered Cache.
-- **DNS & Email Health**: Verification of SPF and DMARC records to prevent domain spoofing.
-
-#### Professional PDF Export
-Generate, view, and save professional audit reports locally. These vector-based PDFs are perfect for sharing with stakeholders or maintaining compliance logs.
-
-<div align="center">
-  <img src="screenshots/3.5. audit-pdf-report-sample.png" width="800" alt="PDF Audit Report Sample" />
-</div>
-
----
-
-## Core Capabilities
-
-CF Studio includes high-tier features for comprehensive management:
-- **Bulk Data Export**: Export table data instantly to multiple formats.
-- **Professional Audit Reports**: Generate vector-based PDF reports for domain health.
-- **R2 Bucket Creation & Deletion**: Create and manage R2 buckets natively.
-- **Advanced Indexing**: Full interactive control over D1 indexes.
+The small bilingual site lives in [site](site). Pushes to `main` deploy it as a Cloudflare Worker through [Deploy CFDesk Worker](.github/workflows/worker.yml), targeting `cfdesk.01mvp.com`.
 
 ## Tech Stack
 
 - **Frontend:** React, Vite, TypeScript
 - **Backend:** Rust, Tauri v2
-- **UI & Styling:** Tailwind CSS v4, shadcn/ui
-- **Package Manager:** Bun
-- **Local State:** SQLite
-
-## Getting Started
-
-### Prerequisites
-
-- [Bun](https://bun.sh/)
-- [Rust](https://www.rust-lang.org/tools/install)
-- Cloudflare Wrangler CLI (`wrangler login`)
-
-### Local Development
-
-1. Clone the repository:
-    ```bash
-    git clone https://github.com/makerjackie/cf-studio.git
-    cd cf-studio
-    ```
-
-2. Install dependencies:
-    ```bash
-    bun install
-    ```
-
-3. Start the development server:
-    ```bash
-    bun tauri dev
-    ```
-
-## Roadmap
-
-<a href="https://cfstudio.dev">CF Studio</a> is evolving rapidly. Here's what has been built and what's on the horizon.
-
-### Core Foundation
-- [x] **Native UI Shell**: High-performance desktop experience using Tauri v2.
-- [x] **Dynamic Theme System**: Full support for Dark/Light modes with OKLCH color spaces.
-- [x] **Zero-Config Auth**: Automatic detection of local `wrangler` sessions for instant access.
-- [x] **In-App Updater**: Native update delivery with real-time download progress.
-
-### Database (D1)
-- [x] **Interactive Data Grid**: Browse and edit table data with a spreadsheet-like experience.
-- [x] **Smart SQL Editor**: Context-aware autocomplete for table and column names.
-- [x] **Visual Schema**: Auto-generated ER Diagrams for complex database architectures.
-- [x] **Index Architect**: GUI for creating and managing SQL indexes with cost estimation.
-- [x] **Bulk Export**: Instant data extraction to multiple portable formats.
-
-### Storage (R2)
-- [x] **Object Explorer**: Seamlessly navigate through buckets and folders.
-- [x] **Streaming Uploads**: High-speed, multi-part uploads with real-time progress.
-- [x] **Bucket Orchestration**: Create, delete, and configure R2 buckets natively.
-
-### Audit & Optimization (Pro)
-- [x] **Security Posture Audit**: Automated check for SSL, WAF, and Firewall best practices.
-- [x] **Performance Benchmarking**: Insights into Brotli, HTTP/3, and Caching configurations.
-- [x] **DNS & Email Health**: Verification of SPF, DKIM, and DMARC records.
-- [x] **Vector PDF Reports**: Programmatic generation of professional audit reports.
-
-### _Future Horizons_
-- [ ] **KV Namespace CRUD**: Full management for Key-Value storage.
-- [ ] **Workers Metrics**: Real-time log streaming and CPU/Memory monitoring.
-- [ ] **Vectorize Integration**: Manage vector databases for AI/ML workloads.
-- [ ] **Local Simulation**: Integrated Miniflare support for local-first testing.
-
-## Contributing
-
-Contributions are welcome! Please open an issue first to discuss any major changes.
+- **UI:** Tailwind CSS v4 and shadcn/ui
+- **Package manager:** Bun
+- **Local state:** SQLite
 
 ## License
 
 [MIT](LICENSE)
-
------
-
-Built by [CF Studio](https://cfstudio.dev).

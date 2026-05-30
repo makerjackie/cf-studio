@@ -337,7 +337,9 @@ function DatabaseList({ onSelect }: DatabaseListProps) {
               variant="ghost"
               size="icon"
               onClick={() => {
-                  const storedTheme = localStorage.getItem("cf-studio-theme") || "dark";
+                  const storedTheme = localStorage.getItem("cf-desk-theme")
+                    || localStorage.getItem("cf-studio-theme")
+                    || "dark";
                   const historyUrl = `index.html?theme=${encodeURIComponent(storedTheme)}`;
                   const webview = new WebviewWindow("history", {
                       url: historyUrl,

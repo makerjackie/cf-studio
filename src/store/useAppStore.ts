@@ -453,22 +453,8 @@ export const useAppStore = create<AppState>()(
       checkFeatureFlags: async () => {
         const { invoke } = await import("@tauri-apps/api/core");
         try {
-          // 1. Check if the Rust backend has 'pro' features compiled in
           const isProBuild = await invoke<boolean>("is_pro_enabled").catch(() => false);
-          let enableD1History = false;
-
-          // 2. Fetch the remote config for specific feature toggles (regardless of build type)
-          try {
-            const response = await fetch('https://pro.cfstudio.dev/config.json?t=' + Date.now(), {
-              cache: 'no-store'
-            });
-            if (response.ok) {
-              const config = await response.json();
-              enableD1History = config.enable_d1_query_history === true;
-            }
-          } catch (e) {
-            console.error("Failed to fetch remote Pro config:", e);
-          }
+          const enableD1History = isProBuild;
 
           set({
             isProBuild,
@@ -481,7 +467,7 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: "cf-studio-cache",          // localStorage key
+      name: "cf-desk-cache",          // localStorage key
       storage: createJSONStorage(() => localStorage),
       // Only persist the data fields — actions are not serialisable.
       partialize: (state) => ({

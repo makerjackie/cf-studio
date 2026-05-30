@@ -1,4 +1,4 @@
-# MakerJackie CF Studio Fork Requirements
+# MakerJackie CFDesk Fork Requirements
 
 ## Product Positioning
 
@@ -60,7 +60,7 @@ The strongest use case is fast local management for D1, R2, and KV when the Clou
 
 ## R2 Custom Domain Behavior
 
-R2 buckets are private by default. CF Studio can only copy a working public URL when one of these is enabled:
+R2 buckets are private by default. CFDesk can only copy a working public URL when one of these is enabled:
 
 - A custom domain connected to the bucket.
 - The Cloudflare-managed `r2.dev` public development URL.

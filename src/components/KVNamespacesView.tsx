@@ -402,11 +402,11 @@ export function KVNamespacesView() {
                   <Braces size={14} className="mr-2" />
                   Format JSON
                 </Button>
-                <Button variant="outline" onClick={() => writeText(valueDraft, { label: "CF Studio" })}>
+                <Button variant="outline" onClick={() => writeText(valueDraft, { label: "CFDesk" })}>
                   <Clipboard size={14} className="mr-2" />
                   Copy value
                 </Button>
-                <Button variant="outline" onClick={() => writeText(keyDraft || selectedKey || "", { label: "CF Studio" })} disabled={!keyDraft && !selectedKey}>
+                <Button variant="outline" onClick={() => writeText(keyDraft || selectedKey || "", { label: "CFDesk" })} disabled={!keyDraft && !selectedKey}>
                   <Clipboard size={14} className="mr-2" />
                   Copy key
                 </Button>

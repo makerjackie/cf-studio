@@ -43,7 +43,7 @@ const capabilities = [
 ];
 
 async function copy(value: string) {
-  await writeText(value, { label: "CF Studio" });
+  await writeText(value, { label: "CFDesk" });
 }
 
 export function LocalExplorerView() {
@@ -65,7 +65,7 @@ export function LocalExplorerView() {
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
             Cloudflare Local Explorer is the official local binding browser for
             `wrangler dev`. Use it to inspect local KV, R2, D1, Durable Objects,
-            and Workflows data while CF Studio stays focused on remote account
+            and Workflows data while CFDesk stays focused on remote account
             resources.
           </p>
         </div>
@@ -149,7 +149,7 @@ export function LocalExplorerView() {
             <h2 className="text-sm font-semibold">When to use it</h2>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Use Local Explorer when you are debugging data created by
-              `wrangler dev`. Use CF Studio when you need to inspect or maintain
+              `wrangler dev`. Use CFDesk when you need to inspect or maintain
               remote Cloudflare resources in the selected account.
             </p>
           </div>

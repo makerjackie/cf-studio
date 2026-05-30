@@ -950,14 +950,14 @@ export function SettingsView() {
                     <div className="absolute -inset-4 bg-primary/20 blur-2xl rounded-full animate-pulse" />
                     <img
                       src={theme === "dark" ? "/app-icon-dark.png" : "/app-icon.png"}
-                      alt="CF Studio"
+                      alt="CFDesk"
                       className="w-24 h-24 rounded-3xl shadow-2xl relative border-2 border-white/10"
                       draggable={false}
                     />
                   </div>
                   
                   <div className="space-y-2">
-                    <h2 className="text-3xl font-black tracking-tight bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text text-transparent">CF Studio</h2>
+                    <h2 className="text-3xl font-black tracking-tight bg-gradient-to-b from-foreground to-foreground/70 bg-clip-text text-transparent">CFDesk</h2>
                     <p className="text-sm text-muted-foreground font-mono bg-background/50 py-1 px-3 rounded-full border border-border/50 inline-block">{t("settings.aboutVersion", { version: appVersion.version })}</p>
                   </div>
                   
@@ -966,11 +966,11 @@ export function SettingsView() {
                   </p>
                   
                   <div className="flex gap-4">
-                    <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://github.com/makerjackie/cf-studio")}>
+                    <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://github.com/makerjackie/cf-desk")}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       GitHub
                     </Button>
-                    <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://cfstudio.dev")}>
+                    <Button variant="outline" className="rounded-xl px-6 h-11 border-border/50 bg-background/50" onClick={() => open("https://cfdesk.01mvp.com")}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       {t("settings.website")}
                     </Button>

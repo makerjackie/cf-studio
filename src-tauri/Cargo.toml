@@ -1,8 +1,8 @@
 [package]
-name = "cf-studio"
+name = "cf-desk"
 version = "1.2.1"
-description = "A blazing-fast native desktop client for Cloudflare D1 and KV"
-authors = ["CF Studio"]
+description = "A native desktop workspace for Cloudflare remote resources"
+authors = ["CFDesk"]
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -11,7 +11,7 @@ rust-version = "1.77.2"
 [lib]
 # The `_lib` suffix avoids name conflicts with the binary crate on Windows.
 # See https://github.com/rust-lang/cargo/issues/8519
-name = "cf_studio_lib"
+name = "cf_desk_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]

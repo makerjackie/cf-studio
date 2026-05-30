@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the next-stage R2 work for the MakerJackie CF Studio fork.
+This document defines the next-stage R2 work for the MakerJackie CFDesk fork.
 
 The product direction is not "a smaller Cloudflare Dashboard". The useful product is a local-first R2 asset manager for images, blog assets, downloads, and static files.
 
@@ -26,7 +26,7 @@ Primary user goal:
 
 3. Clipboard behavior should be native, not WebView-dependent.
 
-   Browser `navigator.clipboard` can fail inside WebView. CF Studio should use Tauri's native clipboard plugin for reading and writing text/images where possible, and explain why clipboard access is needed.
+   Browser `navigator.clipboard` can fail inside WebView. CFDesk should use Tauri's native clipboard plugin for reading and writing text/images where possible, and explain why clipboard access is needed.
 
 4. Private buckets should still be inspectable.
 

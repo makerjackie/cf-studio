@@ -121,7 +121,7 @@ function Sidebar({
         />
         {!collapsed && (
           <span className="font-semibold text-sm text-sidebar-foreground tracking-tight whitespace-nowrap">
-            CF Studio
+            CFDesk
           </span>
         )}
       </div>
@@ -342,10 +342,10 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
           variant="ghost"
           size="sm"
           className="h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60"
-          onClick={() => open("https://github.com/makerjackie/cf-studio")}
+          onClick={() => open("https://github.com/makerjackie/cf-desk")}
         >
           <Github className="mr-2" size={14} />
-          cf-studio
+          cf-desk
         </Button>
       </div>
     </header>
@@ -494,7 +494,7 @@ export function Layout() {
   const currentNav = navGroups.flatMap((g) => g.items).find(
     (n) => n.id === activeId,
   );
-  const pageTitle = currentNav?.label ?? "CF Studio";
+  const pageTitle = currentNav?.label ?? "CFDesk";
 
   return (
     <AuditZoneProvider>

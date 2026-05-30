@@ -1,31 +1,33 @@
-# CF Studio MakerJackie Fork
+# CFDesk
 
-这是 `makerjackie/cf-studio` 的中文说明。这个 fork 基于 `mubashardev/cf-studio`，目标是评估它是否适合作为本地 Cloudflare 管理器的基础。
+这是 `makerjackie/cf-desk` 的中文说明。
 
-## 这个 fork 改了什么
+CFDesk 是一个面向 Cloudflare 日常运维的原生桌面工作台，重点放在远程资源：R2 素材、D1 数据库、Workers、Queues、KV、Token 权限检查，以及带确认的安全操作。
 
-- 修复 macOS GUI 启动时检测不到 nvm 中 `node` / `wrangler` 的问题。
-- 增加基础中英文界面切换。
-- D1 / R2 / KV 主要页面已接入中文文案。
-- 优先读取 `CLOUDFLARE_API_TOKEN` 环境变量；没有环境变量时可在设置页手动保存 API Token 到 macOS Keychain；再回退到 Wrangler OAuth 配置。
-- 用公开 fallback 替换上游私有 `src/pro_modules` submodule，让仓库可以直接 clone、安装、构建。
-- 补齐 R2 上传、下载、图片预览、复制公开 URL、公开域名状态。
-- 增加 Token 权限检查页，用于排查 D1 / R2 / KV 权限。
+CFDesk 基于 MakerJackie 对 [CF Studio](https://github.com/mubashardev/cf-studio) 的 fork 继续改进。我们感谢原 CF Studio 项目提供的桌面基础；CFDesk 会保留好用的部分，并把方向收拢到更明确的远程 Cloudflare 资源管理。
+
+官网：[cfdesk.01mvp.com](https://cfdesk.01mvp.com)
+
+## 4 月 18 日之后的主要更新
+
+- 增加 Cloudflare API Token 引导、macOS Keychain 保存，以及 D1、R2、KV、Workers、Queues、Analytics 权限检查。
+- 扩展中英文界面文案，主界面、设置页和资源页都进入更可维护的 i18n 结构。
+- 强化 R2 素材工作流：缓存对象列表、上传/下载、图片预览、公开 URL 复制、公开域名检测、传输设置、分片上传，以及删除/覆盖前确认。
+- 把产品主线从 D1/R2 扩展到远程 KV、Workers、Queues 和账号总览。
+- 增加 Workers 快捷操作、近期健康信号、指标、观测设置、配置检查，以及更低风险的复制和跳转入口。
+- 对删除、覆盖、Worker 设置、Secret、路由、域名、计划任务等远程写操作加入确认。
+- 改进 macOS 从 Finder 启动时对 nvm、Wrangler、Cloudflare token 环境变量的检测。
+- 更新 MakerJackie fork 的 release metadata、更新检查、构建产物命名和公开文档。
 
 ## 功能范围
 
-当前公开 fork 适合用来评估这些工作流：
-
-- D1 数据库列表
-- D1 表结构查看
-- D1 表数据浏览
-- D1 SQL 查询编辑器
-- D1 可视化结构图
-- R2 存储桶和对象列表、上传、下载、图片预览、公开 URL 复制
-- Token 权限检查
-- KV 占位页
-
-注意：这个 fork 不包含上游私有 Pro 模块。高级导出、完整审计能力等功能需要单独实现或继续接入。
+- **R2 素材管理：** 浏览存储桶，上传/下载文件，预览图片，复制公开 URL，检查公开域名状态。
+- **D1 数据库：** 浏览数据库和表，运行 SQL，查看结构图，管理索引，导出常用格式。
+- **Workers 运维：** 查看 Workers、部署和设置，复制路由，打开 Dashboard，检查近期健康状态，管理观测设置。
+- **KV 和 Queues：** 作为远程资源检查和轻量操作入口。
+- **Token 检查：** 验证当前 token 是否能访问 CFDesk 需要的 Cloudflare API。
+- **隐私遮罩：** 演示或录屏时模糊账号、数据库、存储桶和对象名。
+- **Local Explorer 入口：** 本地 `wrangler dev` 绑定数据交给 Cloudflare 官方 Local Explorer，CFDesk 专注远程账号资源。
 
 ## 本地开发
 
@@ -41,15 +43,15 @@ wrangler login
 启动：
 
 ```bash
-git clone git@github.com:makerjackie/cf-studio.git
-cd cf-studio
+git clone git@github.com:makerjackie/cf-desk.git
+cd cf-desk
 export PATH="$HOME/.bun/bin:$PATH"
 source "$HOME/.cargo/env"
 bun install --frozen-lockfile
 bun run tauri dev
 ```
 
-如果你使用 API Token，而不是 `wrangler login`：
+如果使用 API Token：
 
 ```bash
 export CLOUDFLARE_API_TOKEN="your-token"
@@ -57,7 +59,7 @@ export CLOUDFLARE_ACCOUNT_ID="your-account-id"
 bun run tauri dev
 ```
 
-如果你不熟悉终端环境变量，可以在 App 的 Settings 页面粘贴 API Token。当前 macOS 版本会把它保存到 Keychain。Token 创建入口：
+也可以在 App 的 Settings 页面粘贴 API Token。当前 macOS 版本会把它保存到 Keychain。Token 创建入口：
 
 ```txt
 https://dash.cloudflare.com/profile/api-tokens
@@ -70,6 +72,9 @@ Account:Read
 D1:Read / D1:Edit
 R2 Storage:Read / R2 Storage:Edit
 Workers KV Storage:Read / Workers KV Storage:Edit
+Workers Scripts:Read / Workers Scripts:Edit
+Queues:Read / Queues:Edit
+Account Analytics:Read
 ```
 
 ## 构建本机 App
@@ -77,33 +82,32 @@ Workers KV Storage:Read / Workers KV Storage:Edit
 ```bash
 export PATH="$HOME/.bun/bin:$PATH"
 source "$HOME/.cargo/env"
+bun run build
 bun run tauri build
 ```
 
 macOS app 通常会生成在：
 
 ```bash
-src-tauri/target/release/bundle/macos/CF-Studio.app
+src-tauri/target/release/bundle/macos/CFDesk.app
 ```
 
 安装到 `/Applications`：
 
 ```bash
-cp -R "src-tauri/target/release/bundle/macos/CF-Studio.app" /Applications/
+cp -R "src-tauri/target/release/bundle/macos/CFDesk.app" /Applications/
 ```
 
 这个 fork 暂时不做 Apple 签名和公证。如果 macOS 阻止打开本地构建版本或从 Release 下载的版本，可以移除 quarantine 标记：
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/CF-Studio.app
+xattr -dr com.apple.quarantine /Applications/CFDesk.app
 ```
 
-## 当前判断
+## 网站
 
-这个 fork 更适合作为“Cloudflare Dashboard / Wrangler / cf CLI 的本地伴侣”，而不是完整替代官网。短期更值得投入的方向是：
+双语介绍站点在 [site](site)。推送到 `main` 后，GitHub Actions 会部署为 Cloudflare Worker，并绑定到 `cfdesk.01mvp.com`。
 
-- 让 D1 表格浏览和 SQL 编辑更稳定。
-- 把 R2 做成更像图床和素材管理器。
-- 补齐 KV 搜索和 JSON 编辑。
-- 增加本地 Wrangler / Local Explorer / 远程资源对比。
-- 把中文和英文文案整理成更完整的 i18n 结构。
+## License
+
+[MIT](LICENSE)

@@ -14,7 +14,7 @@ const ActivityDashboard = lazy(() =>
       default: () => (
         <div className="flex flex-col items-center justify-center h-screen bg-background text-muted-foreground p-10 text-center">
             <h1 className="text-xl font-bold mb-2">Pro Feature Required</h1>
-            <p className="text-sm max-w-xs">Advanced Query History & Tracking is only available in the Pro version of CF Studio.</p>
+            <p className="text-sm max-w-xs">Advanced Query History & Tracking is not included in this public CFDesk build.</p>
         </div>
       )
     }))
@@ -38,7 +38,7 @@ function App() {
 
   if (windowLabel === "history") {
     return (
-      <ThemeProvider defaultTheme="dark" storageKey="cf-studio-theme">
+      <ThemeProvider defaultTheme="dark" storageKey="cf-desk-theme">
         <Suspense fallback={<div className="h-screen flex items-center justify-center bg-background"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <ActivityDashboard />
         </Suspense>
@@ -47,7 +47,7 @@ function App() {
   }
 
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="cf-studio-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="cf-desk-theme">
       <SetupWizard>
         <Layout />
       </SetupWizard>

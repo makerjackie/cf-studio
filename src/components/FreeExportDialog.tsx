@@ -60,7 +60,7 @@ export function FreeExportDialog({ isOpen, onClose, dataToExport, allColumns }: 
     setStatus("copying");
     setError(null);
     try {
-      await writeText(exportText, { label: "CF Studio" });
+      await writeText(exportText, { label: "CFDesk" });
       setStatus("idle");
       onClose();
     } catch (copyError) {

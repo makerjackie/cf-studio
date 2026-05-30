@@ -68,24 +68,24 @@ jobs:
             echo ""
             echo "| Platform | Architecture | File |"
             echo "| :--- | :--- | :--- |"
-            echo "| **macOS** | Apple Silicon (M1/M2/M3/M4) | \`CF-Studio-$NEW_VERSION-apple_silicon.dmg\` |"
-            echo "| **macOS** | Intel | \`CF-Studio-$NEW_VERSION-intel_chip.dmg\` |"
-            echo "| **Windows** | x64 | \`CF-Studio-$NEW_VERSION-windows_x64.exe\` |"
-            echo "| **Linux** | x86_64 | \`CF-Studio-$NEW_VERSION-linux_x64.{deb,AppImage}\` |"
-            echo "| **Linux** | ARM64 | \`CF-Studio-$NEW_VERSION-linux_arm64.{deb,AppImage}\` |"
+            echo "| **macOS** | Apple Silicon (M1/M2/M3/M4) | \`CFDesk-$NEW_VERSION-apple_silicon.dmg\` |"
+            echo "| **macOS** | Intel | \`CFDesk-$NEW_VERSION-intel_chip.dmg\` |"
+            echo "| **Windows** | x64 | \`CFDesk-$NEW_VERSION-windows_x64.exe\` |"
+            echo "| **Linux** | x86_64 | \`CFDesk-$NEW_VERSION-linux_x64.{deb,AppImage}\` |"
+            echo "| **Linux** | ARM64 | \`CFDesk-$NEW_VERSION-linux_arm64.{deb,AppImage}\` |"
             echo ""
             echo "---"
             echo ""
             echo "### macOS Note"
             echo "*If macOS blocks the app after first install, run:*"
             echo ""
-            echo "\`xattr -dr com.apple.quarantine /Applications/CF-Studio.app\`"
+            echo "\`xattr -dr com.apple.quarantine /Applications/CFDesk.app\`"
             echo ""
             echo "### Windows Note"
             echo "*Windows SmartScreen may show a warning — click **\"More info\"** → **\"Run anyway\"** to proceed.*"
             echo ""
             echo "*PowerShell command to unblock the installer (if needed):*"
-            echo "\`Unblock-File -Path \"\$HOME\Downloads\CF-Studio-$NEW_VERSION-windows_x64.exe\"\`"
+            echo "\`Unblock-File -Path \"\$HOME\Downloads\CFDesk-$NEW_VERSION-windows_x64.exe\"\`"
             echo "EOF"
           } >> $GITHUB_OUTPUT
 
@@ -99,7 +99,7 @@ jobs:
 
           # Update Cargo.toml version
           sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" src-tauri/Cargo.toml
-          perl -0pi -e "s/(\\[\\[package\\]\\]\\nname = \\\"cf-studio\\\"\\nversion = \\\")[^\\\"]+(\\\")/\${1}$NEW_VERSION\${2}/" src-tauri/Cargo.lock
+          perl -0pi -e "s/(\\[\\[package\\]\\]\\nname = \\\"cf-desk\\\"\\nversion = \\\")[^\\\"]+(\\\")/\${1}$NEW_VERSION\${2}/" src-tauri/Cargo.lock
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -174,11 +174,11 @@ jobs:
           mkdir -p dist/artifacts
           
           # Find and rename bundles using exact names from the table
-          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.dmg" -exec cp {} "dist/artifacts/CF-Studio-$VERSION-$ARCH.dmg" \;
-          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -exec cp {} "dist/artifacts/CF-Studio-$VERSION-$ARCH.exe" \;
-          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.deb" -exec cp {} "dist/artifacts/CF-Studio-$VERSION-$ARCH.deb" \;
-          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.AppImage" -exec cp {} "dist/artifacts/CF-Studio-$VERSION-$ARCH.AppImage" \;
-          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.rpm" -exec cp {} "dist/artifacts/CF-Studio-$VERSION-$ARCH.rpm" \;
+          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.dmg" -exec cp {} "dist/artifacts/CFDesk-$VERSION-$ARCH.dmg" \;
+          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.exe" -exec cp {} "dist/artifacts/CFDesk-$VERSION-$ARCH.exe" \;
+          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.deb" -exec cp {} "dist/artifacts/CFDesk-$VERSION-$ARCH.deb" \;
+          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.AppImage" -exec cp {} "dist/artifacts/CFDesk-$VERSION-$ARCH.AppImage" \;
+          find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.rpm" -exec cp {} "dist/artifacts/CFDesk-$VERSION-$ARCH.rpm" \;
           
           # Include .sig files for the updater if they exist
           find src-tauri/target/${{ matrix.target }}/release/bundle -name "*.sig" -exec cp {} "dist/artifacts/" \;
@@ -187,7 +187,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.prepare.outputs.new_version }}
-          name: "CF Studio v${{ needs.prepare.outputs.new_version }}"
+          name: "CFDesk v${{ needs.prepare.outputs.new_version }}"
           body: ${{ needs.prepare.outputs.release_body }}
           draft: false
           prerelease: false

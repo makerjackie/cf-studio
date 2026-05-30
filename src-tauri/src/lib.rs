@@ -1,4 +1,4 @@
-// CF Studio — Tauri backend entry point
+// CFDesk — Tauri backend entry point
 
 pub mod cloudflare_auth;
 pub mod cloudflare_client;
@@ -133,9 +133,9 @@ async fn download_update_binary(
 fn fix_mac_quarantine() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        // We target the standard Applications path for CF Studio
+        // We target the standard Applications path for CFDesk
         let status = Command::new("xattr")
-            .args(["-cr", "/Applications/CF Studio.app"])
+            .args(["-cr", "/Applications/CFDesk.app"])
             .status()
             .map_err(|e: std::io::Error| e.to_string())?;
 

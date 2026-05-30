@@ -1,0 +1,10 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CFDesk logo">
+  <rect width="256" height="256" rx="56" fill="#13201F"/>
+  <circle cx="84" cy="133" r="30" fill="#A8F1E7"/>
+  <circle cx="119" cy="115" r="42" fill="#A8F1E7"/>
+  <circle cx="165" cy="137" r="34" fill="#A8F1E7"/>
+  <rect x="62" y="127" width="122" height="44" rx="22" fill="#A8F1E7"/>
+  <rect x="84" y="134" width="72" height="17" rx="8.5" fill="#D7F46B"/>
+  <rect x="88" y="183" width="80" height="14" rx="7" fill="#F47D64"/>
+  <circle cx="183" cy="78" r="10" fill="#F47D64"/>
+</svg>

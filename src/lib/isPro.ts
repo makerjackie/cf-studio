@@ -3,7 +3,7 @@
 // Build-time constant injected by vite.config.ts.
 //
 // Public build  (default):  IS_PRO === false
-// Pro build (CF_STUDIO_PRO=true npm run ...):  IS_PRO === true
+// Pro build (CFDESK_PRO=true npm run ...):  IS_PRO === true
 //
 // This constant is completely inlined at compile time — it is NOT stored
 // in localStorage, window, or any user-accessible location. Dead code that

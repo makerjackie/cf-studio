@@ -280,7 +280,7 @@ function WorkerListItem({
           className="h-8 w-8"
           title="Copy URL"
           disabled={!primaryUrl}
-          onClick={() => primaryUrl && writeText(primaryUrl, { label: "CF Studio" })}
+          onClick={() => primaryUrl && writeText(primaryUrl, { label: "CFDesk" })}
         >
           <Clipboard size={14} />
         </Button>
@@ -685,12 +685,12 @@ function WorkerDetailView({
             {workerUrl && <p className="mt-2 truncate font-mono text-xs text-muted-foreground">{workerUrl}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => writeText(`wrangler tail ${workerName}`, { label: "CF Studio" })}>
+            <Button variant="outline" size="sm" onClick={() => writeText(`wrangler tail ${workerName}`, { label: "CFDesk" })}>
               <Terminal size={14} className="mr-2" />
               Copy tail
             </Button>
             {workerUrl && (
-              <Button variant="outline" size="sm" onClick={() => writeText(workerUrl, { label: "CF Studio" })}>
+              <Button variant="outline" size="sm" onClick={() => writeText(workerUrl, { label: "CFDesk" })}>
                 <Clipboard size={14} className="mr-2" />
                 Copy URL
               </Button>
@@ -885,7 +885,7 @@ function WorkerDetailView({
                     </Badge>
                   </div>
                   <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    CF Studio updates Cloudflare Workers Logs settings through script settings. Log lines stay in Cloudflare.
+                    CFDesk updates Cloudflare Workers Logs settings through script settings. Log lines stay in Cloudflare.
                   </p>
                 </div>
                 <Button onClick={saveObservabilitySettings} disabled={observabilityStatus === "saving"}>
@@ -940,12 +940,12 @@ function WorkerDetailView({
               <div className="min-w-0">
                 <h3 className="text-sm font-semibold">Workers Logs and Tail</h3>
                 <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                  Logs can contain secrets or user data, so CF Studio does not persist log lines locally. Use Workers Logs in
+                  Logs can contain secrets or user data, so CFDesk does not persist log lines locally. Use Workers Logs in
                   Cloudflare, run Wrangler tail, or create a Cloudflare API tail session.
                 </p>
                 <code className="mt-3 block rounded-md bg-muted px-3 py-2 font-mono text-xs">wrangler tail {workerName}</code>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={() => writeText(`wrangler tail ${workerName}`, { label: "CF Studio" })}>
+                  <Button variant="outline" size="sm" onClick={() => writeText(`wrangler tail ${workerName}`, { label: "CFDesk" })}>
                     <Clipboard size={14} className="mr-2" />
                     Copy command
                   </Button>
@@ -1193,7 +1193,7 @@ function WorkerDetailView({
             </div>
           </div>
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground xl:col-span-2">
-            Domain and route changes directly affect production traffic. CF Studio asks for confirmation before each attach or detach action.
+            Domain and route changes directly affect production traffic. CFDesk asks for confirmation before each attach or detach action.
           </div>
         </TabsContent>
 

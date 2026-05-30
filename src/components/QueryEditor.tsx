@@ -331,7 +331,7 @@ export function QueryEditor({ databaseId, tables }: QueryEditorProps) {
   const copyResults = async (format: TabularExportFormat) => {
     if (status.kind !== "select") return;
     try {
-      await writeText(rowsToFormat(status.rows, status.columns, format), { label: "CF Studio" });
+      await writeText(rowsToFormat(status.rows, status.columns, format), { label: "CFDesk" });
       setCopyStatus(t(format === "csv" ? "d1.query.copiedCsv" : "d1.query.copiedJson"));
       window.setTimeout(() => setCopyStatus(null), 1800);
     } catch (copyError) {

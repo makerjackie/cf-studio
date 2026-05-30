@@ -11,7 +11,7 @@ use reqwest::{
 use serde::Deserialize;
 
 const CF_API_BASE: &str = "https://api.cloudflare.com/client/v4";
-const USER_AGENT_STR: &str = concat!("CF-Studio/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT_STR: &str = concat!("CFDesk/", env!("CARGO_PKG_VERSION"));
 
 // ── Cloudflare API envelope ────────────────────────────────────────────────────
 

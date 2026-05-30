@@ -70,7 +70,7 @@ export function ActivityDashboard() {
 
   const load = useCallback(async (page = pageData.page) => {
     if (!isTauriRuntime) {
-      setError("CF Studio desktop runtime is required to read local D1 query history.");
+      setError("CFDesk desktop runtime is required to read local D1 query history.");
       return;
     }
 
@@ -125,7 +125,7 @@ export function ActivityDashboard() {
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-semibold">D1 Query History</h1>
-          <p className="text-xs text-muted-foreground">Local history recorded by CF Studio on this machine.</p>
+          <p className="text-xs text-muted-foreground">Local history recorded by CFDesk on this machine.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => load()} disabled={status === "loading"}>
@@ -245,7 +245,7 @@ export function ActivityDashboard() {
                       {selectedItem.database_id} · {dateLabel(selectedItem.timestamp)}
                     </p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => writeText(selectedItem.query_text, { label: "CF Studio" })}>
+                  <Button variant="outline" size="sm" onClick={() => writeText(selectedItem.query_text, { label: "CFDesk" })}>
                     <Copy size={14} className="mr-2" />
                     Copy SQL
                   </Button>

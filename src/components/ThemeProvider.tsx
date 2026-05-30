@@ -31,7 +31,7 @@ interface ThemeProviderProps {
 export function ThemeProvider({
   children,
   defaultTheme = "dark",
-  storageKey = "cf-studio-theme",
+  storageKey = "cf-desk-theme",
 }: ThemeProviderProps) {
   const getInitialTheme = (): Theme => {
     const param = new URLSearchParams(window.location.search).get("theme");

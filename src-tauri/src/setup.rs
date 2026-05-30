@@ -1,4 +1,4 @@
-// CF Studio — In-App Setup Wizard (dependency checker + installer)
+// CFDesk — In-App Setup Wizard (dependency checker + installer)
 
 use crate::shell_env::{login_shell, probe_command, with_user_path};
 use serde::Serialize;

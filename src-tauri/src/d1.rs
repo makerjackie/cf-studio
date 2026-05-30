@@ -445,7 +445,7 @@ pub async fn export_d1_sql_dump(
         .unwrap_or_default();
 
     let mut output = String::new();
-    output.push_str("-- CF Studio D1 SQL dump\n");
+    output.push_str("-- CFDesk D1 SQL dump\n");
     output.push_str("-- Generated from remote Cloudflare D1 data.\n\n");
     output.push_str("PRAGMA foreign_keys=OFF;\n");
     output.push_str("BEGIN TRANSACTION;\n\n");

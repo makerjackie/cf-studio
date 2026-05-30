@@ -2,7 +2,7 @@
 //
 // Reads the local Wrangler OAuth config to provide zero-touch authentication.
 // When the user already exports CLOUDFLARE_API_TOKEN for Wrangler, use that
-// in-memory value first. No API tokens are stored by CF Studio.
+// in-memory value first. No API tokens are stored by CFDesk.
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -176,7 +176,7 @@ pub fn wrangler_config_path() -> Result<PathBuf, AuthError> {
 
 // ── Core parsing logic ─────────────────────────────────────────────────────────
 
-const KEYCHAIN_SERVICE: &str = "CF Studio Cloudflare";
+const KEYCHAIN_SERVICE: &str = "CFDesk Cloudflare";
 const KEYCHAIN_TOKEN_ACCOUNT: &str = "cloudflare_api_token";
 const KEYCHAIN_ACCOUNT_ID_ACCOUNT: &str = "cloudflare_account_id";
 
@@ -608,7 +608,7 @@ mod tests {
     #[test]
     fn missing_config_returns_error() {
         // Simulate a non-existent file.
-        let path = PathBuf::from("/tmp/__cf_studio_nonexistent_test_file.toml");
+        let path = PathBuf::from("/tmp/__cf_desk_nonexistent_test_file.toml");
         assert!(!path.exists());
     }
 }
