@@ -416,7 +416,6 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
     { id: "r2", passed: r2.state.status === "success" },
     { id: "remote", passed: remoteStatus !== "error" },
     { id: "workers", passed: Boolean(workers) },
-    { id: "privacy", passed: privacySettings.enabled },
     { id: "updates", passed: autoUpdate },
   ];
   const readiness = calculateReleaseReadiness(readinessChecks);
@@ -477,7 +476,6 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
     { label: activeAccount?.id ? ui.accountReady : ui.accountMissing, passed: Boolean(activeAccount?.id), action: () => open(buildAccountDashboardUrl(activeAccount?.id)) },
     { label: ui.tokenCheck, passed: Boolean(userProfile?.email || activeAccount?.id), action: () => onNavigate("permissions") },
     { label: ui.localExplorer, passed: true, action: () => onNavigate("local-explorer") },
-    { label: privacySettings.enabled ? ui.privacyOn : ui.privacyOff, passed: privacySettings.enabled, action: () => onNavigate("settings") },
     { label: autoUpdate ? ui.autoUpdateOn : ui.autoUpdateOff, passed: autoUpdate, action: () => onNavigate("settings") },
   ];
 
@@ -492,9 +490,11 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
                   <CloudCog size={12} />
                   v{appVersion.version}
                 </Badge>
-                <Badge variant="outline" className={privacySettings.enabled ? "border-emerald-500/30 text-emerald-600 dark:text-emerald-400" : ""}>
-                  {privacySettings.enabled ? ui.privacyOn : ui.privacyOff}
-                </Badge>
+                {privacySettings.enabled && (
+                  <Badge variant="outline" className="border-emerald-500/30 text-emerald-600 dark:text-emerald-400">
+                    {ui.privacyOn}
+                  </Badge>
+                )}
               </div>
               <h1 className="text-2xl font-semibold tracking-tight">{ui.title}</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{ui.subtitle}</p>
@@ -728,7 +728,6 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge variant="secondary">Pinned D1 {pinnedD1.length}</Badge>
               <Badge variant="secondary">Pinned R2 {pinnedR2.length}</Badge>
-              <Badge variant="outline">{privacySettings.enabled ? ui.privacyOn : ui.privacyOff}</Badge>
             </div>
           </div>
 

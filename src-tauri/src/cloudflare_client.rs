@@ -8,7 +8,7 @@ use reqwest::{
     header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT},
     Client, ClientBuilder,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 const CF_API_BASE: &str = "https://api.cloudflare.com/client/v4";
 const USER_AGENT_STR: &str = concat!("CFDesk/", env!("CARGO_PKG_VERSION"));
@@ -20,6 +20,7 @@ const USER_AGENT_STR: &str = concat!("CFDesk/", env!("CARGO_PKG_VERSION"));
 pub struct CfResponse<T> {
     pub result: Option<T>,
     pub success: bool,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub errors: Vec<CfError>,
     pub result_info: Option<serde_json::Value>,
 }
@@ -28,6 +29,14 @@ pub struct CfResponse<T> {
 pub struct CfError {
     pub code: u32,
     pub message: String,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 // ── Client ─────────────────────────────────────────────────────────────────────
@@ -86,5 +95,35 @@ impl CloudflareClient {
     /// Shorthand: PATCH `{base_url}/{path}`
     pub fn patch(&self, path: &str) -> reqwest::RequestBuilder {
         self.inner.patch(format!("{}/{}", self.base_url, path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cf_response_accepts_null_errors() {
+        let body = r#"{
+            "result": [],
+            "success": true,
+            "errors": null,
+            "messages": null,
+            "result_info": { "page": 1, "per_page": 100 }
+        }"#;
+
+        let response: CfResponse<Vec<serde_json::Value>> = serde_json::from_str(body).unwrap();
+
+        assert!(response.success);
+        assert_eq!(response.result.unwrap().len(), 0);
+        assert!(response.errors.is_empty());
+        assert_eq!(
+            response
+                .result_info
+                .unwrap()
+                .get("page")
+                .and_then(serde_json::Value::as_u64),
+            Some(1)
+        );
     }
 }
