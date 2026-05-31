@@ -32,13 +32,40 @@ export interface PreparedUpload {
   skipped?: boolean;
 }
 
+function safeDecodeURIComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function compareText(a: string, b: string) {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function normalizeKeyPath(value: string) {
+  return value.trim().replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/+/, "");
+}
+
+function sanitizeObjectName(value: string) {
+  return normalizeKeyPath(value).replace(/\/+$/g, "") || "r2-object";
+}
+
+function timestampMs(value: string | undefined) {
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 export function encodeR2Key(key: string) {
   return key.split("/").map(encodeURIComponent).join("/");
 }
 
 export function buildPublicUrl(domain: string | null, key: string) {
-  if (!domain) return null;
-  return `${domain.replace(/\/+$/, "")}/${encodeR2Key(key)}`;
+  const normalizedDomain = domain?.trim().replace(/\/+$/, "");
+  if (!normalizedDomain) return null;
+  return `${normalizedDomain}/${encodeR2Key(key)}`;
 }
 
 export function fileNameFromKey(key: string) {
@@ -52,7 +79,7 @@ export function fileNameFromPath(path: string) {
 export function fileNameFromUrl(value: string) {
   try {
     const url = new URL(value);
-    const name = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "");
+    const name = safeDecodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "");
     return name || "remote-file";
   } catch {
     return "remote-file";
@@ -60,18 +87,20 @@ export function fileNameFromUrl(value: string) {
 }
 
 export function extensionForMime(type: string) {
-  const [, subtype = "png"] = type.split("/");
+  const [mime = ""] = type.toLowerCase().split(";");
+  const [, rawSubtype = "png"] = mime.trim().split("/");
+  const [, subtype = rawSubtype] = rawSubtype.trim().split("/");
   if (subtype === "jpeg") return "jpg";
   if (subtype === "svg+xml") return "svg";
   return subtype.split("+")[0] || "png";
 }
 
 export function isImageObject(key: string) {
-  return /\.(avif|gif|jpe?g|png|svg|webp)$/i.test(key);
+  return /\.(avif|bmp|gif|heic|heif|ico|jpe?g|png|svg|tiff?|webp)$/i.test(key);
 }
 
 export function normalizePrefix(value: string) {
-  const trimmed = value.trim().replace(/^\/+/, "");
+  const trimmed = normalizeKeyPath(value).replace(/\/+$/g, "");
   if (!trimmed) return "";
   return trimmed.endsWith("/") ? trimmed : `${trimmed}/`;
 }
@@ -112,7 +141,7 @@ export function nextAvailableKey(key: string, existing: Set<string>, reserved: S
 }
 
 export function objectLabel(key: string, prefix: string) {
-  return key.replace(prefix, "") || key;
+  return key.startsWith(prefix) ? key.slice(prefix.length) || key : key;
 }
 
 export function objectTypeLabel(key: string) {
@@ -122,12 +151,13 @@ export function objectTypeLabel(key: string) {
 }
 
 export function markdownImage(url: string, key: string) {
-  return `![${fileNameFromKey(key)}](${url})`;
+  return `![${escapeMarkdownLabel(fileNameFromKey(key))}](${url})`;
 }
 
 export function markdownLink(url: string, key: string) {
   const name = fileNameFromKey(key);
-  return isImageObject(key) ? `![${name}](${url})` : `[${name}](${url})`;
+  const safeName = escapeMarkdownLabel(name);
+  return isImageObject(key) ? `![${safeName}](${url})` : `[${safeName}](${url})`;
 }
 
 function escapeHtml(value: string) {
@@ -136,6 +166,10 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function escapeMarkdownLabel(value: string) {
+  return value.replace(/([\\\[\]])/g, "\\$1");
 }
 
 export function htmlLink(url: string, key: string) {
@@ -149,11 +183,13 @@ export function htmlLink(url: string, key: string) {
 
 export function formatCustomCopyOutput(template: string, url: string, key: string) {
   const name = fileNameFromKey(key);
+  const ext = objectTypeLabel(key);
   const resolvedTemplate = template.trim() || "{url}";
   return resolvedTemplate
     .split("{url}").join(url)
     .split("{key}").join(key)
-    .split("{name}").join(name);
+    .split("{name}").join(name)
+    .split("{ext}").join(ext);
 }
 
 export function formatCopyOutput(url: string, key: string, format: CopyFormat, customTemplate = "{url}") {
@@ -164,7 +200,7 @@ export function formatCopyOutput(url: string, key: string, format: CopyFormat, c
 }
 
 export function copyOutputLinesForKeys(keys: string[], publicDomain: string | null, format: CopyFormat, customTemplate = "{url}") {
-  return keys
+  return Array.from(new Set(keys))
     .map((key) => {
       const url = buildPublicUrl(publicDomain, key);
       return url ? formatCopyOutput(url, key, format, customTemplate) : null;
@@ -182,7 +218,7 @@ export function buildPreviewCacheKey(accountId: string, bucketName: string, obje
 }
 
 export function buildUploadPrefix(prefix: string, uploadPrefixInput: string, useDatePrefix: boolean, date = new Date()) {
-  const basePrefix = normalizePrefix(uploadPrefixInput || prefix);
+  const basePrefix = normalizePrefix(uploadPrefixInput.trim() ? uploadPrefixInput : prefix);
   return `${basePrefix}${useDatePrefix ? datePrefix(date) : ""}`;
 }
 
@@ -192,8 +228,10 @@ export function planUploadSources(
   uploadNameOverride: string
 ): PlannedUpload[] {
   return sources.map((source) => {
-    const customName = sources.length === 1 ? uploadNameOverride.trim().replace(/^\/+/, "") : "";
-    const objectName = customName || source.name;
+    const customName = sources.length === 1 && uploadNameOverride.trim()
+      ? sanitizeObjectName(uploadNameOverride)
+      : "";
+    const objectName = customName || sanitizeObjectName(source.name);
     return {
       source,
       key: `${uploadPrefix}${objectName}`,
@@ -238,19 +276,21 @@ export function sortR2Objects(
     }
 
     if (sortField === "updated") {
-      return (new Date(a.uploaded).getTime() - new Date(b.uploaded).getTime()) * multiplier;
+      const updatedDelta = timestampMs(a.uploaded) - timestampMs(b.uploaded);
+      return (updatedDelta || compareText(fileNameFromKey(a.key), fileNameFromKey(b.key))) * multiplier;
     }
 
     if (sortField === "type") {
-      return objectTypeLabel(a.key).localeCompare(objectTypeLabel(b.key)) * multiplier;
+      const typeDelta = compareText(objectTypeLabel(a.key), objectTypeLabel(b.key));
+      return (typeDelta || compareText(fileNameFromKey(a.key), fileNameFromKey(b.key))) * multiplier;
     }
 
-    return fileNameFromKey(a.key).localeCompare(fileNameFromKey(b.key)) * multiplier;
+    return compareText(fileNameFromKey(a.key), fileNameFromKey(b.key)) * multiplier;
   });
 }
 
 export function folderLabel(folder: string, prefix: string) {
-  return folder.replace(prefix, "") || folder;
+  return folder.startsWith(prefix) ? folder.slice(prefix.length) || folder : folder;
 }
 
 export function selectedObjects(objects: R2Object[], selectedKeys: Set<string>) {

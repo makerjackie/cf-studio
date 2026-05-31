@@ -33,7 +33,6 @@ import appVersion from "../../package.json";
 import {
   CACHE_TTL_MS,
   useAppStore,
-  type AppLanguage,
 } from "@/store/useAppStore";
 import { useD1Databases, useR2Buckets } from "@/hooks/useCloudflare";
 import {
@@ -55,6 +54,7 @@ import {
   type StudioHealthTone,
 } from "@/lib/studio";
 import { cn } from "@/lib/utils";
+import { useI18n, type TranslationKey } from "@/lib/i18n";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -63,196 +63,38 @@ interface StudioViewProps {
   onOpenCommandPalette: () => void;
 }
 
-const COPY: Record<AppLanguage, {
-  title: string;
-  subtitle: string;
-  commandCenter: string;
-  refresh: string;
-  refreshing: string;
-  accountReady: string;
-  accountMissing: string;
-  accountBody: string;
-  dashboard: string;
-  envSnippet: string;
-  permissions: string;
-  copied: string;
-  copiedDesc: string;
-  resourceMap: string;
-  resourceMapDesc: string;
-  localRunbook: string;
-  localRunbookDesc: string;
-  readiness: string;
-  readinessDesc: string;
-  cache: string;
-  cacheDesc: string;
-  workersHealth: string;
-  workersHealthDesc: string;
-  recentWorkers: string;
-  recentWorkersDesc: string;
-  open: string;
-  copy: string;
-  loaded: string;
-  cached: string;
-  stale: string;
-  notLoaded: string;
-  noWorkers: string;
-  remoteError: string;
-  privacyOn: string;
-  privacyOff: string;
-  releaseReady: string;
-  releaseNeedsWork: string;
-  localFirst: string;
-  localFirstDesc: string;
-  tokenCheck: string;
-  tokenCheckDesc: string;
-  apiTokens: string;
-  localExplorer: string;
-  localExplorerDesc: string;
-  docs: string;
-  cacheFresh: string;
-  cacheEmpty: string;
-  cacheStale: string;
-  autoUpdateOn: string;
-  autoUpdateOff: string;
-}> = {
-  "en-US": {
-    title: "CFDesk Home",
-    subtitle: "One place for account status, remote resources, Wrangler runbooks, and release readiness.",
-    commandCenter: "Command Center",
-    refresh: "Refresh all",
-    refreshing: "Refreshing...",
-    accountReady: "Account connected",
-    accountMissing: "No account selected",
-    accountBody: "CFDesk can work from a local Wrangler session or a saved API token.",
-    dashboard: "Dashboard",
-    envSnippet: "Env snippet",
-    permissions: "Token permissions",
-    copied: "Copied",
-    copiedDesc: "Text copied to clipboard.",
-    resourceMap: "Resource Map",
-    resourceMapDesc: "Fast entry points for the Cloudflare surfaces CFDesk can inspect.",
-    localRunbook: "Local Runbook",
-    localRunbookDesc: "Copy commands you usually need when switching between local and remote work.",
-    readiness: "Workspace Readiness",
-    readinessDesc: "Operational checks for a productive local Cloudflare session.",
-    cache: "Cache Freshness",
-    cacheDesc: "Persistent local cache lets the app open quickly and shows when data is old.",
-    workersHealth: "Workers Health",
-    workersHealthDesc: "Recent request and error signals when Account Analytics access is available.",
-    recentWorkers: "Recently Updated Workers",
-    recentWorkersDesc: "Scripts sorted by modification time.",
-    open: "Open",
-    copy: "Copy",
-    loaded: "loaded",
-    cached: "cached",
-    stale: "stale",
-    notLoaded: "not loaded",
-    noWorkers: "No Workers loaded yet.",
-    remoteError: "Some remote resources failed to load.",
-    privacyOn: "Privacy Shield on",
-    privacyOff: "Privacy Shield off",
-    releaseReady: "Ready",
-    releaseNeedsWork: "Needs attention",
-    localFirst: "Local first",
-    localFirstDesc: "Use Wrangler and Local Explorer for local bindings; use CFDesk for account resources.",
-    tokenCheck: "Token check",
-    tokenCheckDesc: "Open the permission matrix before any risky remote workflow.",
-    apiTokens: "API Tokens",
-    localExplorer: "Local Explorer",
-    localExplorerDesc: "Open Cloudflare's local binding browser for wrangler dev.",
-    docs: "Docs",
-    cacheFresh: "Fresh",
-    cacheEmpty: "Empty",
-    cacheStale: "Stale",
-    autoUpdateOn: "Auto update enabled",
-    autoUpdateOff: "Auto update disabled",
-  },
-  "zh-CN": {
-    title: "CFDesk Home",
-    subtitle: "把账号状态、远程资源、Wrangler runbook 和发布准备度放在一个本机入口。",
-    commandCenter: "命令中心",
-    refresh: "全部刷新",
-    refreshing: "刷新中...",
-    accountReady: "账号已连接",
-    accountMissing: "未选择账号",
-    accountBody: "CFDesk 可以读取本机 Wrangler 登录态，也可以使用已保存的 API Token。",
-    dashboard: "Dashboard",
-    envSnippet: "环境变量",
-    permissions: "Token 权限",
-    copied: "已复制",
-    copiedDesc: "内容已复制到剪贴板。",
-    resourceMap: "资源地图",
-    resourceMapDesc: "快速进入 CFDesk 可检查的 Cloudflare 资源界面。",
-    localRunbook: "本机 Runbook",
-    localRunbookDesc: "复制本机开发和远程发布之间常用的 Wrangler 命令。",
-    readiness: "工作台准备度",
-    readinessDesc: "检查本机 Cloudflare 会话是否适合继续操作。",
-    cache: "缓存新鲜度",
-    cacheDesc: "本地持久缓存让应用快速打开，并提示哪些数据已经变旧。",
-    workersHealth: "Workers 健康",
-    workersHealthDesc: "当 Token 有 Account Analytics 权限时显示近期请求和错误信号。",
-    recentWorkers: "最近更新的 Workers",
-    recentWorkersDesc: "按修改时间排序的脚本。",
-    open: "打开",
-    copy: "复制",
-    loaded: "已加载",
-    cached: "缓存",
-    stale: "过期",
-    notLoaded: "未加载",
-    noWorkers: "还没有加载 Workers。",
-    remoteError: "部分远程资源加载失败。",
-    privacyOn: "隐私遮罩已开",
-    privacyOff: "隐私遮罩已关",
-    releaseReady: "就绪",
-    releaseNeedsWork: "需要处理",
-    localFirst: "本机优先",
-    localFirstDesc: "本地绑定用 Wrangler 和 Local Explorer，账号资源用 CFDesk。",
-    tokenCheck: "Token 检查",
-    tokenCheckDesc: "执行高风险远程操作前，先打开权限矩阵确认。",
-    apiTokens: "API Tokens",
-    localExplorer: "Local Explorer",
-    localExplorerDesc: "打开 Cloudflare 官方 wrangler dev 本地绑定浏览器。",
-    docs: "文档",
-    cacheFresh: "新鲜",
-    cacheEmpty: "空",
-    cacheStale: "过期",
-    autoUpdateOn: "自动更新已开",
-    autoUpdateOff: "自动更新已关",
-  },
-};
-
 const LOCAL_COMMANDS = [
   {
     label: "Wrangler login",
     value: "npx wrangler login",
-    body: "Refresh the machine session CFDesk can reuse.",
+    bodyKey: "studio.command.loginBody",
   },
   {
     label: "Local Worker",
     value: "npx wrangler dev",
-    body: "Run a local Worker and open the Explorer with the terminal shortcut.",
+    bodyKey: "studio.command.localWorkerBody",
   },
   {
     label: "Remote preview",
     value: "npx wrangler dev --remote",
-    body: "Debug against remote services when local parity matters.",
+    bodyKey: "studio.command.remotePreviewBody",
   },
   {
     label: "Deploy Worker",
     value: "npx wrangler deploy",
-    body: "Ship the current Worker project.",
+    bodyKey: "studio.command.deployBody",
   },
   {
     label: "Tail logs",
     value: "npx wrangler tail <worker-name>",
-    body: "Stream production Worker logs after a change.",
+    bodyKey: "studio.command.tailBody",
   },
   {
     label: "List resources",
     value: "npx wrangler d1 list && npx wrangler r2 bucket list && npx wrangler kv namespace list",
-    body: "Compare local CLI visibility with the Studio resource map.",
+    bodyKey: "studio.command.listBody",
   },
-];
+] satisfies { label: string; value: string; bodyKey: TranslationKey }[];
 
 const DOCS = [
   { label: "Workers", url: "https://developers.cloudflare.com/workers/" },
@@ -269,10 +111,10 @@ function toneClasses(tone: StudioHealthTone) {
   return "border-border bg-muted/30 text-muted-foreground";
 }
 
-function freshnessLabel(freshness: CacheFreshness, ui: typeof COPY[AppLanguage]) {
-  if (freshness.status === "fresh") return ui.cacheFresh;
-  if (freshness.status === "stale") return ui.cacheStale;
-  return ui.cacheEmpty;
+function freshnessLabel(freshness: CacheFreshness, t: ReturnType<typeof useI18n>["t"]) {
+  if (freshness.status === "fresh") return t("studio.cacheFresh");
+  if (freshness.status === "stale") return t("studio.cacheStale");
+  return t("studio.cacheEmpty");
 }
 
 function ResourceTile({
@@ -336,8 +178,52 @@ function Panel({
 
 export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps) {
   const { toast } = useToast();
-  const language = useAppStore((state) => state.language);
-  const ui = COPY[language];
+  const { t } = useI18n();
+  const ui = {
+    title: t("studio.title"),
+    subtitle: t("studio.subtitle"),
+    commandCenter: t("studio.commandCenter"),
+    refresh: t("studio.refreshAll"),
+    refreshing: t("studio.refreshing"),
+    accountReady: t("studio.accountReady"),
+    accountMissing: t("studio.accountMissing"),
+    accountBody: t("studio.accountBody"),
+    dashboard: t("studio.dashboard"),
+    envSnippet: t("studio.envSnippet"),
+    permissions: t("studio.permissions"),
+    copied: t("studio.copied"),
+    copiedDesc: t("studio.copiedDesc"),
+    resourceMap: t("studio.resourceMap"),
+    resourceMapDesc: t("studio.resourceMapDesc"),
+    localRunbook: t("studio.localRunbook"),
+    localRunbookDesc: t("studio.localRunbookDesc"),
+    readiness: t("studio.readiness"),
+    readinessDesc: t("studio.readinessDesc"),
+    cache: t("studio.cache"),
+    cacheDesc: t("studio.cacheDesc"),
+    workersHealth: t("studio.workersHealth"),
+    workersHealthDesc: t("studio.workersHealthDesc"),
+    open: t("common.open"),
+    copy: t("common.copy"),
+    loaded: t("studio.loaded"),
+    cached: t("remote.cached"),
+    notLoaded: t("studio.notLoaded"),
+    noWorkers: t("studio.noWorkers"),
+    remoteError: t("studio.remoteError"),
+    privacyOn: t("studio.privacyOn"),
+    releaseReady: t("studio.releaseReady"),
+    releaseNeedsWork: t("studio.releaseNeedsWork"),
+    localFirst: t("studio.localFirst"),
+    localFirstDesc: t("studio.localFirstDesc"),
+    tokenCheck: t("studio.tokenCheck"),
+    tokenCheckDesc: t("studio.tokenCheckDesc"),
+    apiTokens: t("studio.apiTokens"),
+    localExplorer: t("nav.localExplorer"),
+    localExplorerDesc: t("studio.localExplorerDesc"),
+    docs: t("common.docs"),
+    autoUpdateOn: t("studio.autoUpdateOn"),
+    autoUpdateOff: t("studio.autoUpdateOff"),
+  };
   const activeAccount = useAppStore((state) => state.activeAccount);
   const userProfile = useAppStore((state) => state.userProfile);
   const privacySettings = useAppStore((state) => state.privacySettings);
@@ -450,7 +336,7 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
       icon: Workflow,
       label: "Workers",
       count: workers?.workers.length ?? "—",
-      badge: workerRecentErrors > 0 ? `${workerRecentErrors} errors` : ui.loaded,
+      badge: workerRecentErrors > 0 ? t("studio.errorsCount", { count: workerRecentErrors }) : ui.loaded,
       tone: workerRecentErrors > 0 ? "warning" as const : workers ? "good" as const : "muted" as const,
       id: "workers",
     },
@@ -465,7 +351,7 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
     {
       icon: ShieldCheck,
       label: ui.tokenCheck,
-      count: "Open",
+      count: ui.open,
       badge: ui.open,
       tone: "good" as const,
       id: "permissions",
@@ -535,8 +421,8 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-xs uppercase tracking-wider text-muted-foreground">{ui.workersHealth}</p>
-              <p className="mt-2 text-sm font-semibold">{workerRequests.toLocaleString()} requests</p>
-              <p className="mt-1 text-xs text-muted-foreground">{workerRecentErrors.toLocaleString()} errors</p>
+              <p className="mt-2 text-sm font-semibold">{t("studio.requestsCount", { count: workerRequests.toLocaleString() })}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("studio.errorsCount", { count: workerRecentErrors.toLocaleString() })}</p>
             </div>
           </div>
 
@@ -600,7 +486,7 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-medium">{item.label}</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{item.body}</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">{t(item.bodyKey)}</p>
                   </div>
                   <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => copyText(item.value)} title={ui.copy}>
                     <Clipboard size={14} />
@@ -626,7 +512,7 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
                   <p className="text-xs text-muted-foreground">{freshness.label}</p>
                 </div>
                 <Badge variant="outline" className={cn("h-5 px-1.5 text-[10px]", toneClasses(freshness.status === "fresh" ? "good" : freshness.status === "stale" ? "warning" : "muted"))}>
-                  {freshnessLabel(freshness, ui)}
+                  {freshnessLabel(freshness, t)}
                 </Badge>
               </div>
             ))}
@@ -648,15 +534,15 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
         <Panel title={ui.workersHealth} desc={ui.workersHealthDesc} icon={Gauge}>
           <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Requests</p>
+              <p className="text-xs text-muted-foreground">{t("workers.metrics.requests")}</p>
               <p className="mt-2 text-xl font-semibold">{workerRequests.toLocaleString()}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Errors</p>
+              <p className="text-xs text-muted-foreground">{t("workers.metrics.errors")}</p>
               <p className="mt-2 text-xl font-semibold">{workerRecentErrors.toLocaleString()}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
-              <p className="text-xs text-muted-foreground">Bindings / Routes</p>
+              <p className="text-xs text-muted-foreground">{t("studio.bindingsRoutes")}</p>
               <p className="mt-2 text-xl font-semibold">{workersWithBindings} / {workersWithRoutes}</p>
             </div>
           </div>
@@ -677,7 +563,7 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
                     </span>
                   </span>
                   {(worker.recent_metrics?.errors ?? 0) > 0 ? (
-                    <Badge variant="destructive">{worker.recent_metrics?.errors} errors</Badge>
+                    <Badge variant="destructive">{t("studio.errorsCount", { count: worker.recent_metrics?.errors ?? 0 })}</Badge>
                   ) : (
                     <Badge variant="secondary">{ui.loaded}</Badge>
                   )}
@@ -726,8 +612,8 @@ export function StudioView({ onNavigate, onOpenCommandPalette }: StudioViewProps
             </div>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">{ui.localFirstDesc}</p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Badge variant="secondary">Pinned D1 {pinnedD1.length}</Badge>
-              <Badge variant="secondary">Pinned R2 {pinnedR2.length}</Badge>
+              <Badge variant="secondary">{t("studio.pinnedD1", { count: pinnedD1.length })}</Badge>
+              <Badge variant="secondary">{t("studio.pinnedR2", { count: pinnedR2.length })}</Badge>
             </div>
           </div>
 

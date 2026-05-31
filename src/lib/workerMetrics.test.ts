@@ -38,4 +38,34 @@ describe("summarizeWorkerMetricRows", () => {
 
     expect(summary.successes).toBe(0);
   });
+
+  it("accepts common metric aliases and numeric status codes", () => {
+    const summary = summarizeWorkerMetricRows([
+      {
+        sum: { requestCount: "1,200", errorCount: "5", subrequestCount: "30" },
+        quantiles: { cpu_time_p50: "1500", cpu_time_p99: "6400" },
+        dimensions: { statusCode: 500 },
+      },
+    ]);
+
+    expect(summary.requests).toBe(1200);
+    expect(summary.errors).toBe(5);
+    expect(summary.subrequests).toBe(30);
+    expect(summary.cpuP50).toBe(1500);
+    expect(summary.cpuP99).toBe(6400);
+    expect(Array.from(summary.statuses.entries())).toEqual([["500", 1200]]);
+  });
+
+  it("ignores malformed rows and does not create zero-count status buckets", () => {
+    const summary = summarizeWorkerMetricRows([
+      null,
+      [],
+      { sum: { requests: "-10", errors: "nope" }, dimensions: { status: "ok" } },
+      { sum: { requests: 0 }, dimensions: { outcome: "canceled" } },
+    ]);
+
+    expect(summary.requests).toBe(0);
+    expect(summary.errors).toBe(0);
+    expect(summary.statuses.size).toBe(0);
+  });
 });

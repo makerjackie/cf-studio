@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface HistoryItem {
   id: number;
@@ -56,6 +57,8 @@ function resultPreview(value?: string | null) {
 }
 
 export function ActivityDashboard() {
+  const { t } = useI18n();
+  const runtimeRequired = t("activity.runtimeRequired");
   const [pageData, setPageData] = useState<HistoryPage>({ items: [], total: 0, page: 1, pageSize: 50 });
   const [stats, setStats] = useState<HistoryStats | null>(null);
   const [search, setSearch] = useState("");
@@ -70,7 +73,7 @@ export function ActivityDashboard() {
 
   const load = useCallback(async (page = pageData.page) => {
     if (!isTauriRuntime) {
-      setError("CFDesk desktop runtime is required to read local D1 query history.");
+      setError(runtimeRequired);
       return;
     }
 
@@ -96,7 +99,7 @@ export function ActivityDashboard() {
     } finally {
       setStatus("idle");
     }
-  }, [pageData.page, pageData.pageSize, search]);
+  }, [pageData.page, pageData.pageSize, runtimeRequired, search]);
 
   useEffect(() => {
     load(1);
@@ -105,7 +108,7 @@ export function ActivityDashboard() {
   const totalPages = Math.max(1, Math.ceil(pageData.total / pageData.pageSize));
 
   const clearHistory = async () => {
-    const confirmed = window.confirm("Clear all local D1 query history?");
+    const confirmed = window.confirm(t("activity.clearConfirm"));
     if (!confirmed) return;
     setStatus("clearing");
     setError(null);
@@ -124,17 +127,17 @@ export function ActivityDashboard() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
         <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold">D1 Query History</h1>
-          <p className="text-xs text-muted-foreground">Local history recorded by CFDesk on this machine.</p>
+          <h1 className="truncate text-sm font-semibold">{t("activity.title")}</h1>
+          <p className="text-xs text-muted-foreground">{t("activity.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => load()} disabled={status === "loading"}>
             {status === "loading" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
-            Refresh
+            {t("common.refresh")}
           </Button>
           <Button variant="destructive" size="sm" onClick={clearHistory} disabled={status === "clearing" || pageData.total === 0}>
             {status === "clearing" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Trash2 size={14} className="mr-2" />}
-            Clear
+            {t("activity.clear")}
           </Button>
         </div>
       </header>
@@ -144,15 +147,15 @@ export function ActivityDashboard() {
           <div className="grid grid-cols-3 gap-2 border-b border-border p-3">
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-lg font-semibold">{stats?.totalQueries ?? 0}</p>
-              <p className="text-xs text-muted-foreground">Queries</p>
+              <p className="text-xs text-muted-foreground">{t("activity.queries")}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-lg font-semibold">{stats?.uniqueDatabases ?? 0}</p>
-              <p className="text-xs text-muted-foreground">Databases</p>
+              <p className="text-xs text-muted-foreground">{t("activity.databases")}</p>
             </div>
             <div className="rounded-md border border-border bg-muted/20 p-3">
               <p className="text-lg font-semibold">{stats?.totalRowsRead ?? 0}</p>
-              <p className="text-xs text-muted-foreground">Rows read</p>
+              <p className="text-xs text-muted-foreground">{t("activity.rowsRead")}</p>
             </div>
           </div>
 
@@ -168,7 +171,7 @@ export function ActivityDashboard() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search SQL or table"
+                placeholder={t("activity.search")}
                 className="h-9 pl-8"
               />
             </div>
@@ -182,7 +185,7 @@ export function ActivityDashboard() {
 
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {pageData.items.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No query history yet.</p>
+              <p className="p-4 text-sm text-muted-foreground">{t("activity.empty")}</p>
             ) : (
               pageData.items.map((item) => (
                 <button
@@ -214,7 +217,7 @@ export function ActivityDashboard() {
               disabled={pageData.page <= 1}
               onClick={() => load(pageData.page - 1)}
             >
-              Previous
+              {t("activity.previous")}
             </Button>
             <span className="text-xs text-muted-foreground">
               {pageData.page} / {totalPages}
@@ -225,7 +228,7 @@ export function ActivityDashboard() {
               disabled={pageData.page >= totalPages}
               onClick={() => load(pageData.page + 1)}
             >
-              Next
+              {t("activity.next")}
             </Button>
           </div>
         </section>
@@ -233,21 +236,21 @@ export function ActivityDashboard() {
         <section className="min-h-0 overflow-y-auto p-5">
           {!selectedItem ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-              Select a query to inspect details.
+              {t("activity.selectQuery")}
             </div>
           ) : (
             <div className="mx-auto grid max-w-5xl gap-4">
               <div className="rounded-lg border border-border bg-background p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h2 className="text-sm font-semibold">Query</h2>
+                    <h2 className="text-sm font-semibold">{t("activity.query")}</h2>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {selectedItem.database_id} · {dateLabel(selectedItem.timestamp)}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => writeText(selectedItem.query_text, { label: "CFDesk" })}>
                     <Copy size={14} className="mr-2" />
-                    Copy SQL
+                    {t("activity.copySql")}
                   </Button>
                 </div>
                 <pre className="mt-4 max-h-[360px] overflow-auto whitespace-pre-wrap rounded-md bg-muted p-4 font-mono text-xs">
@@ -257,26 +260,26 @@ export function ActivityDashboard() {
 
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-xs text-muted-foreground">Rows read</p>
+                  <p className="text-xs text-muted-foreground">{t("activity.rowsRead")}</p>
                   <p className="mt-1 text-lg font-semibold">{selectedItem.rows_read}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-xs text-muted-foreground">Source</p>
+                  <p className="text-xs text-muted-foreground">{t("activity.source")}</p>
                   <p className="mt-1 truncate text-sm font-medium">{selectedItem.execution_source}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-xs text-muted-foreground">Table</p>
-                  <p className="mt-1 truncate text-sm font-medium">{selectedItem.table_name || "Unknown"}</p>
+                  <p className="text-xs text-muted-foreground">{t("activity.table")}</p>
+                  <p className="mt-1 truncate text-sm font-medium">{selectedItem.table_name || t("common.unknown")}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p className="text-xs text-muted-foreground">Session</p>
+                  <p className="text-xs text-muted-foreground">{t("activity.session")}</p>
                   <p className="mt-1 truncate font-mono text-xs">{selectedItem.session_id}</p>
                 </div>
               </div>
 
               {selectedItem.result_data && (
                 <div className="rounded-lg border border-border bg-background p-4">
-                  <h2 className="text-sm font-semibold">Saved result preview</h2>
+                  <h2 className="text-sm font-semibold">{t("activity.savedPreview")}</h2>
                   <pre className="mt-3 max-h-[420px] overflow-auto rounded-md bg-muted p-4 font-mono text-xs text-muted-foreground">
                     {resultPreview(selectedItem.result_data)}
                   </pre>

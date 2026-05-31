@@ -14,14 +14,28 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function getNumber(value: unknown, key: string): number {
-  const field = asRecord(value)[key];
-  if (typeof field === "number" && Number.isFinite(field)) return field;
-  if (typeof field === "string" && field.trim()) {
-    const parsed = Number(field);
-    return Number.isFinite(parsed) ? parsed : 0;
+function parseNumber(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace(/,/g, ""));
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
   }
   return 0;
+}
+
+function getNumber(value: unknown, ...keys: string[]): number {
+  const record = asRecord(value);
+  for (const key of keys) {
+    if (key in record) return parseNumber(record[key]);
+  }
+  return 0;
+}
+
+function getStatus(dimensions: Record<string, unknown>) {
+  const status = dimensions.status ?? dimensions.statusCode ?? dimensions.outcome ?? dimensions.eventType;
+  if (typeof status === "string" && status.trim()) return status.trim();
+  if (typeof status === "number" && Number.isFinite(status)) return String(status);
+  return "unknown";
 }
 
 export function summarizeWorkerMetricRows(rows: unknown[] | null | undefined): WorkerMetricSummary {
@@ -40,16 +54,18 @@ export function summarizeWorkerMetricRows(rows: unknown[] | null | undefined): W
     const sum = asRecord(record.sum);
     const quantiles = asRecord(record.quantiles);
     const dimensions = asRecord(record.dimensions);
-    const status = typeof dimensions.status === "string" ? dimensions.status : "unknown";
-    const requests = getNumber(sum, "requests");
-    const errors = getNumber(sum, "errors");
+    const status = getStatus(dimensions);
+    const requests = getNumber(sum, "requests", "requestCount", "requestsTotal");
+    const errors = getNumber(sum, "errors", "errorCount", "errorsTotal");
 
     summary.requests += requests;
     summary.errors += errors;
-    summary.subrequests += getNumber(sum, "subrequests");
-    summary.cpuP50 = Math.max(summary.cpuP50, getNumber(quantiles, "cpuTimeP50"));
-    summary.cpuP99 = Math.max(summary.cpuP99, getNumber(quantiles, "cpuTimeP99"));
-    summary.statuses.set(status, (summary.statuses.get(status) ?? 0) + requests);
+    summary.subrequests += getNumber(sum, "subrequests", "subrequestCount");
+    summary.cpuP50 = Math.max(summary.cpuP50, getNumber(quantiles, "cpuTimeP50", "cpu_time_p50", "cpuTime50"));
+    summary.cpuP99 = Math.max(summary.cpuP99, getNumber(quantiles, "cpuTimeP99", "cpu_time_p99", "cpuTime99"));
+    if (requests > 0) {
+      summary.statuses.set(status, (summary.statuses.get(status) ?? 0) + requests);
+    }
   }
 
   summary.successes = Math.max(0, summary.requests - summary.errors);

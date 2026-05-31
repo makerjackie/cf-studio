@@ -27,4 +27,30 @@ describe("tabularExport", () => {
       "users-table-2026-05-26.csv"
     );
   });
+
+  it("guards exported string cells from spreadsheet formula execution", () => {
+    expect(rowsToCsv([{ note: "=IMPORTDATA(\"https://example.com\")" }], ["note"])).toBe(
+      "note\n\"'=IMPORTDATA(\"\"https://example.com\"\")\""
+    );
+    expect(rowsToCsv([{ amount: -12, textAmount: "-12" }], ["amount", "textAmount"])).toBe(
+      "amount,textAmount\n-12,'-12"
+    );
+  });
+
+  it("serializes non-json and circular values without crashing", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    expect(rowsToCsv([{ id: 1n, circular }], ["id", "circular"])).toBe(
+      "id,circular\n1,[unserializable object]"
+    );
+  });
+
+  it("keeps generated export names visible and bounded", () => {
+    const date = new Date("2026-05-26T00:00:00Z");
+
+    expect(exportFileName("..", "json", date)).toBe("d1-export-2026-05-26.json");
+    expect(exportFileName(".hidden/report", "csv", date)).toBe("hidden-report-2026-05-26.csv");
+    expect(exportFileName("x".repeat(120), "csv", date)).toHaveLength(95);
+  });
 });

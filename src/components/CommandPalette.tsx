@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { useAppStore, type AppLanguage } from "@/store/useAppStore";
+import { useAppStore } from "@/store/useAppStore";
 import type { CloudflareAccount } from "@/hooks/useCloudflare";
 import {
   buildAccountDashboardUrl,
@@ -30,6 +30,7 @@ import {
   type StudioCommandLike,
 } from "@/lib/studio";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface PaletteNavItem {
   id: string;
@@ -51,107 +52,6 @@ interface PaletteCommand extends StudioCommandLike {
   badge?: string;
   run: () => void | Promise<void>;
 }
-
-const COPY: Record<AppLanguage, {
-  title: string;
-  desc: string;
-  search: string;
-  empty: string;
-  copied: string;
-  copiedDesc: string;
-  navGroup: string;
-  actionGroup: string;
-  docsGroup: string;
-  wranglerGroup: string;
-  open: string;
-  copy: string;
-  refresh: string;
-  dashboard: string;
-  dashboardDesc: string;
-  apiTokens: string;
-  apiTokensDesc: string;
-  envSnippet: string;
-  envSnippetDesc: string;
-  tokenPermissions: string;
-  tokenPermissionsDesc: string;
-  privacy: string;
-  privacyDesc: string;
-  privacyOn: string;
-  privacyOff: string;
-  reload: string;
-  reloadDesc: string;
-  docsWorkers: string;
-  docsD1: string;
-  docsR2: string;
-  docsLocalExplorer: string;
-}> = {
-  "en-US": {
-    title: "Command Center",
-    desc: "Search pages, docs, Wrangler commands, and local Studio actions.",
-    search: "Search commands, resources, docs...",
-    empty: "No matching commands.",
-    copied: "Copied",
-    copiedDesc: "Command copied to clipboard.",
-    navGroup: "Navigate",
-    actionGroup: "Studio Actions",
-    docsGroup: "Cloudflare Docs",
-    wranglerGroup: "Wrangler",
-    open: "Open",
-    copy: "Copy",
-    refresh: "Reload app",
-    dashboard: "Open Cloudflare dashboard",
-    dashboardDesc: "Open the selected account in Cloudflare.",
-    apiTokens: "Open API Tokens",
-    apiTokensDesc: "Create or rotate Cloudflare API tokens.",
-    envSnippet: "Copy Cloudflare env snippet",
-    envSnippetDesc: "Copy CLOUDFLARE_API_TOKEN and account id exports.",
-    tokenPermissions: "Copy token permission checklist",
-    tokenPermissionsDesc: "Minimum permissions used by CFDesk.",
-    privacy: "Toggle Privacy Shield",
-    privacyDesc: "Blur or reveal sensitive account and resource names.",
-    privacyOn: "Privacy on",
-    privacyOff: "Privacy off",
-    reload: "Reload CFDesk",
-    reloadDesc: "Refresh local cache state and mounted views.",
-    docsWorkers: "Workers docs",
-    docsD1: "D1 docs",
-    docsR2: "R2 docs",
-    docsLocalExplorer: "Local Explorer docs",
-  },
-  "zh-CN": {
-    title: "命令中心",
-    desc: "搜索页面、文档、Wrangler 命令和本机 Studio 操作。",
-    search: "搜索命令、资源、文档...",
-    empty: "没有匹配的命令。",
-    copied: "已复制",
-    copiedDesc: "命令已复制到剪贴板。",
-    navGroup: "导航",
-    actionGroup: "Studio 操作",
-    docsGroup: "Cloudflare 文档",
-    wranglerGroup: "Wrangler",
-    open: "打开",
-    copy: "复制",
-    refresh: "重新加载应用",
-    dashboard: "打开 Cloudflare Dashboard",
-    dashboardDesc: "在 Cloudflare 中打开当前账号。",
-    apiTokens: "打开 API Tokens",
-    apiTokensDesc: "创建或轮换 Cloudflare API Token。",
-    envSnippet: "复制 Cloudflare 环境变量",
-    envSnippetDesc: "复制 CLOUDFLARE_API_TOKEN 和账号 ID。",
-    tokenPermissions: "复制 Token 权限清单",
-    tokenPermissionsDesc: "CFDesk 使用的最低权限。",
-    privacy: "切换隐私遮罩",
-    privacyDesc: "模糊或显示敏感账号和资源名称。",
-    privacyOn: "隐私已开",
-    privacyOff: "隐私已关",
-    reload: "重新加载 CFDesk",
-    reloadDesc: "刷新本地缓存状态和当前视图。",
-    docsWorkers: "Workers 文档",
-    docsD1: "D1 文档",
-    docsR2: "R2 文档",
-    docsLocalExplorer: "Local Explorer 文档",
-  },
-};
 
 const WRANGLER_COMMANDS = [
   { title: "wrangler login", value: "npx wrangler login", keywords: ["auth", "session"] },
@@ -181,10 +81,42 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const { toast } = useToast();
-  const language = useAppStore((state) => state.language);
+  const { t } = useI18n();
   const privacySettings = useAppStore((state) => state.privacySettings);
   const setPrivacySettings = useAppStore((state) => state.setPrivacySettings);
-  const ui = COPY[language];
+  const ui = {
+    title: t("palette.title"),
+    desc: t("palette.desc"),
+    search: t("palette.search"),
+    empty: t("palette.empty"),
+    copied: t("common.copied"),
+    copiedDesc: t("palette.copiedDesc"),
+    navGroup: t("palette.navGroup"),
+    actionGroup: t("palette.actionGroup"),
+    docsGroup: t("palette.docsGroup"),
+    wranglerGroup: t("palette.wranglerGroup"),
+    open: t("common.open"),
+    copy: t("common.copy"),
+    refresh: t("palette.refresh"),
+    dashboard: t("palette.dashboard"),
+    dashboardDesc: t("palette.dashboardDesc"),
+    apiTokens: t("palette.apiTokens"),
+    apiTokensDesc: t("palette.apiTokensDesc"),
+    envSnippet: t("palette.envSnippet"),
+    envSnippetDesc: t("palette.envSnippetDesc"),
+    tokenPermissions: t("palette.tokenPermissions"),
+    tokenPermissionsDesc: t("palette.tokenPermissionsDesc"),
+    privacy: t("palette.privacy"),
+    privacyDesc: t("palette.privacyDesc"),
+    privacyOn: t("palette.privacyOn"),
+    privacyOff: t("palette.privacyOff"),
+    reload: t("palette.reload"),
+    reloadDesc: t("palette.reloadDesc"),
+    docsWorkers: t("palette.docsWorkers"),
+    docsD1: t("palette.docsD1"),
+    docsR2: t("palette.docsR2"),
+    docsLocalExplorer: t("palette.docsLocalExplorer"),
+  };
 
   const copyText = async (value: string) => {
     await writeText(value, { label: "CFDesk" });

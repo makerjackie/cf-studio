@@ -8,20 +8,21 @@ export const translations = {
 } satisfies Record<AppLanguage, Record<keyof typeof enUS, string>>;
 
 export type TranslationKey = keyof typeof enUS;
+export type TranslationVars = Record<string, string | number>;
+
+export function interpolateTranslation(value: string, vars?: TranslationVars) {
+  if (!vars) return value;
+  return value.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? `{${key}}`));
+}
 
 export function useI18n() {
   const language = useAppStore((state) => state.language);
   const setLanguage = useAppStore((state) => state.setLanguage);
 
-  const interpolate = (value: string, vars?: Record<string, string | number>) => {
-    if (!vars) return value;
-    return value.replace(/\{(\w+)\}/g, (_, key) => String(vars[key] ?? `{${key}}`));
-  };
-
   return {
     language,
     setLanguage,
-    t: (key: TranslationKey, vars?: Record<string, string | number>) =>
-      interpolate(translations[language][key] ?? translations["en-US"][key] ?? key, vars),
+    t: (key: TranslationKey, vars?: TranslationVars) =>
+      interpolateTranslation(translations[language][key] ?? translations["en-US"][key] ?? key, vars),
   };
 }

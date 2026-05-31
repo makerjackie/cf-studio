@@ -35,6 +35,10 @@ CFDesk 基于 MakerJackie 对 [CF Studio](https://github.com/mubashardev/cf-stud
 
 v1.3.0 增加 CFDesk Home、命令中心、快捷键、缓存新鲜度、工作台准备度检查、Workers 健康摘要、Wrangler runbook，以及主要页面按需加载。完整改进清单见 [docs/cfdesk-release-1.3.0.md](docs/cfdesk-release-1.3.0.md)。
 
+## v1.3.1 稳定性发布
+
+v1.3.1 强化导出安全、R2 素材工具、Workers 和 Queues 指标解析、本地化覆盖，以及 release metadata 校验。同时扩展了这些边界的 Vitest 测试。
+
 ## 本地开发
 
 准备环境：

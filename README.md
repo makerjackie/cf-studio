@@ -37,6 +37,10 @@ After the April 18 baseline, this fork moved beyond the original CF Studio scope
 
 The v1.3.0 release adds CFDesk Home, the command center, keyboard shortcuts, cache freshness, workspace readiness checks, Workers health summaries, Wrangler runbooks, and code splitting for major app views. See [docs/cfdesk-release-1.3.0.md](docs/cfdesk-release-1.3.0.md) for the full improvement list.
 
+## v1.3.1 Stability Release
+
+The v1.3.1 release hardens export safety, R2 asset utilities, Workers and Queues metric parsing, localization coverage, and release metadata validation. It also expands the focused Vitest suite around these boundaries.
+
 ## Install / Update
 
 This fork publishes builds through [GitHub Releases](https://github.com/makerjackie/cf-desk/releases). The release workflow builds the Tauri app from `main` when a release commit is pushed.

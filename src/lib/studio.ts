@@ -32,6 +32,17 @@ export const MINIMUM_TOKEN_PERMISSIONS = [
   "Account Analytics:Read",
 ];
 
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase();
+}
+
+function shellDoubleQuote(value: string) {
+  return value.replace(/(["\\$`])/g, "\\$1");
+}
+
 export function formatRelativeAge(timestamp: number | null | undefined, now = Date.now()): string {
   if (!timestamp) return "never";
 
@@ -49,7 +60,10 @@ export function formatRelativeAge(timestamp: number | null | undefined, now = Da
   if (days < 30) return `${days}d ago`;
 
   const months = Math.floor(days / 30);
-  return `${months}mo ago`;
+  if (months < 12) return `${months}mo ago`;
+
+  const years = Math.floor(months / 12);
+  return `${years}y ago`;
 }
 
 export function getCacheFreshness(
@@ -70,8 +84,9 @@ export function getCacheFreshness(
 }
 
 export function buildAccountDashboardUrl(accountId: string | null | undefined): string {
-  return accountId
-    ? `https://dash.cloudflare.com/${accountId}`
+  const normalizedAccountId = accountId?.trim();
+  return normalizedAccountId
+    ? `https://dash.cloudflare.com/${encodeURIComponent(normalizedAccountId)}`
     : "https://dash.cloudflare.com";
 }
 
@@ -80,8 +95,9 @@ export function buildWranglerEnvSnippet(accountId: string | null | undefined): s
     'export CLOUDFLARE_API_TOKEN="your-token"',
   ];
 
-  if (accountId) {
-    lines.push(`export CLOUDFLARE_ACCOUNT_ID="${accountId}"`);
+  const normalizedAccountId = accountId?.trim();
+  if (normalizedAccountId) {
+    lines.push(`export CLOUDFLARE_ACCOUNT_ID="${shellDoubleQuote(normalizedAccountId)}"`);
   } else {
     lines.push('export CLOUDFLARE_ACCOUNT_ID="your-account-id"');
   }
@@ -96,25 +112,31 @@ export function buildTokenPermissionText(): string {
 export function filterStudioCommands<T extends StudioCommandLike>(commands: T[], query: string): T[] {
   const terms = query
     .trim()
-    .toLowerCase()
     .split(/\s+/)
+    .map(normalizeSearchText)
     .filter(Boolean);
 
   if (terms.length === 0) return commands;
 
   return commands.filter((command) => {
-    const haystack = [
+    const haystack = normalizeSearchText([
       command.title,
       command.subtitle ?? "",
       ...(command.keywords ?? []),
-    ].join(" ").toLowerCase();
+    ].join(" "));
 
     return terms.every((term) => haystack.includes(term));
   });
 }
 
 export function calculateReleaseReadiness(checks: ReleaseReadinessCheck[]): number {
-  if (checks.length === 0) return 0;
-  const passed = checks.filter((check) => check.passed).length;
-  return Math.round((passed / checks.length) * 100);
+  const latestById = new Map<string, ReleaseReadinessCheck>();
+  for (const check of checks) {
+    latestById.set(check.id, check);
+  }
+
+  const uniqueChecks = Array.from(latestById.values());
+  if (uniqueChecks.length === 0) return 0;
+  const passed = uniqueChecks.filter((check) => check.passed).length;
+  return Math.round((passed / uniqueChecks.length) * 100);
 }

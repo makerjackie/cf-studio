@@ -1,5 +1,69 @@
 [
   {
+    "version": "1.3.1",
+    "date": "2026-05-31",
+    "features": [
+      "Added spreadsheet formula guards to CSV exports",
+      "Added bounded, visible export filename normalization",
+      "Added resilient serialization for BigInt and circular export values",
+      "Added safer R2 public URL normalization for pasted domains",
+      "Added R2 copy template support for the {ext} placeholder",
+      "Added duplicate filtering when copying multiple R2 object URLs",
+      "Added Markdown label escaping for R2 copy output",
+      "Added HEIC, HEIF, ICO, BMP, and TIFF image recognition for R2 assets",
+      "Added diacritic-insensitive Command Center search",
+      "Added shell-safe Cloudflare account environment snippets",
+      "Added shared translation interpolation helpers",
+      "Added locale key parity tests for English and Simplified Chinese",
+      "Added stricter release metadata validation for semver and changelog shape"
+    ],
+    "featuresZh": [
+      "为 CSV 导出增加电子表格公式防护",
+      "为导出文件名增加长度限制和可见名称规范化",
+      "增强 BigInt 和循环引用导出值的序列化容错",
+      "增强 R2 公开 URL 对粘贴域名的规范化处理",
+      "为 R2 自定义复制模板增加 {ext} 占位符",
+      "复制多个 R2 对象 URL 时自动去重",
+      "为 R2 Markdown 复制结果增加标签转义",
+      "R2 素材识别增加 HEIC、HEIF、ICO、BMP 和 TIFF",
+      "命令中心搜索支持忽略重音符号",
+      "Cloudflare 账号环境变量片段增加 shell 转义",
+      "增加共享翻译插值工具",
+      "增加英文和简体中文 locale key 对齐测试",
+      "增强 release metadata 的 semver 和 changelog 结构校验"
+    ],
+    "fixes": [
+      "Fixed R2 URL extraction when remote filenames contain malformed percent escapes",
+      "Fixed MIME extension parsing for content types with parameters",
+      "Fixed R2 prefix normalization for Windows separators and repeated slashes",
+      "Fixed R2 labels so prefixes are removed only from the start of a key",
+      "Fixed blank upload prefix overrides so they fall back to the current folder",
+      "Fixed upload object names so local path separators are normalized before planning",
+      "Fixed R2 sorting for numeric filenames and invalid uploaded timestamps",
+      "Fixed Worker metric aggregation for alias fields and numeric status codes",
+      "Fixed Worker metric summaries so malformed rows do not create zero-count status buckets",
+      "Fixed Queue metric parsing for nested result metrics and camelCase aliases",
+      "Fixed Queue timestamp parsing for ISO strings and second-based timestamps",
+      "Fixed negative Queue metric values so summaries do not show impossible counts",
+      "Fixed release verification failures when jq is missing or version fields are malformed"
+    ],
+    "fixesZh": [
+      "修复远程文件名包含异常百分号转义时的 R2 URL 文件名提取",
+      "修复带参数 content type 的 MIME 扩展名解析",
+      "修复 R2 前缀对 Windows 分隔符和重复斜杠的规范化",
+      "修复 R2 标签只在 key 开头移除当前前缀",
+      "修复空上传前缀覆盖会丢失当前文件夹的问题",
+      "修复上传对象名规划前未规范化本地路径分隔符的问题",
+      "修复 R2 数字文件名和异常上传时间的排序稳定性",
+      "修复 Workers 指标聚合对别名字段和数字状态码的兼容",
+      "修复异常 Workers 指标行生成 0 计数状态桶的问题",
+      "修复 Queues 指标对嵌套 result metrics 和 camelCase 别名的解析",
+      "修复 Queues 时间戳对 ISO 字符串和秒级时间戳的解析",
+      "修复负数 Queues 指标导致摘要出现不可能计数的问题",
+      "修复 release 校验在缺少 jq 或版本字段异常时的错误提示"
+    ]
+  },
+  {
     "version": "1.3.0",
     "date": "2026-05-31",
     "features": [
