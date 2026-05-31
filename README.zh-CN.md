@@ -21,13 +21,19 @@ CFDesk 基于 MakerJackie 对 [CF Studio](https://github.com/mubashardev/cf-stud
 
 ## 功能范围
 
+- **CFDesk Home：** 本机命令中心，集中展示账号状态、资源数量、准备度、缓存新鲜度、Workers 健康、Wrangler runbook 和文档入口。
 - **R2 素材管理：** 浏览存储桶，上传/下载文件，预览图片，复制公开 URL，检查公开域名状态。
 - **D1 数据库：** 浏览数据库和表，运行 SQL，查看结构图，管理索引，导出常用格式。
 - **Workers 运维：** 查看 Workers、部署和设置，复制路由，打开 Dashboard，检查近期健康状态，管理观测设置。
 - **KV 和 Queues：** 作为远程资源检查和轻量操作入口。
 - **Token 检查：** 验证当前 token 是否能访问 CFDesk 需要的 Cloudflare API。
+- **全局命令：** `Cmd/Ctrl+K` 打开导航、文档、账号操作、Wrangler 命令复制，以及 Token/环境变量片段。
 - **隐私遮罩：** 演示或录屏时模糊账号、数据库、存储桶和对象名。
 - **Local Explorer 入口：** 本地 `wrangler dev` 绑定数据交给 Cloudflare 官方 Local Explorer，CFDesk 专注远程账号资源。
+
+## v1.3.0 CFDesk Home Release
+
+v1.3.0 增加 CFDesk Home、命令中心、快捷键、缓存新鲜度、工作台准备度检查、Workers 健康摘要、Wrangler runbook，以及主要页面按需加载。完整改进清单见 [docs/cfdesk-release-1.3.0.md](docs/cfdesk-release-1.3.0.md)。
 
 ## 本地开发
 

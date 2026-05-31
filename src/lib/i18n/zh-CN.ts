@@ -1,5 +1,7 @@
 export const zhCN = {
     "nav.overviewGroup": "工作台",
+    "nav.studio": "Studio",
+    "nav.remoteOverview": "远程总览",
     "nav.overview": "总览",
     "nav.storageData": "存储和数据",
     "nav.r2": "R2 存储桶",
@@ -65,6 +67,7 @@ export const zhCN = {
     "title.updateError": "更新错误",
     "title.expandSidebar": "展开侧边栏",
     "title.collapseSidebar": "收起侧边栏",
+    "title.commandCenter": "命令",
     "kv.title": "KV 命名空间",
     "kv.subtitle": "浏览和编辑远程 Workers KV 命名空间。",
     "kv.body": "用于轻量检查远程 KV、格式化 JSON、查看 TTL，并在确认后保存修改。",

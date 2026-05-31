@@ -1,13 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { open } from "@tauri-apps/plugin-shell";
-import { DatabasesView } from "@/components/DatabasesView";
-import { SettingsView } from "@/components/SettingsView";
-import { PermissionsView } from "@/components/PermissionsView";
-import { KVNamespacesView } from "@/components/KVNamespacesView";
-import { LocalExplorerView } from "@/components/LocalExplorerView";
-import { QueuesView } from "@/components/QueuesView";
-import { RemoteOverviewView } from "@/components/RemoteOverviewView";
-import { WorkersView } from "@/components/WorkersView";
+import { CommandPalette } from "@/components/CommandPalette";
 import {
   Database,
   KeyRound,
@@ -30,13 +23,13 @@ import {
   Workflow,
   MessageSquare,
   Compass,
+  Command,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTheme, type Theme } from "@/components/ThemeProvider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SessionRefreshModal } from "@/components/SessionRefreshModal";
-import { R2BucketsView } from "@/pro_modules/frontend/R2BucketsView";
 import {
   useAppStore,
   type UserProfile,
@@ -45,13 +38,24 @@ import { invokeCloudflare, useCloudflareAccounts } from "@/hooks/useCloudflare";
 import { useRemoteConfig } from "@/pro_modules/frontend/useRemoteConfig";
 import { useI18n } from "@/lib/i18n";
 import { AuditZoneProvider } from "@/pro_modules/frontend/AuditZoneContext";
-import { SecurityPosture } from "@/pro_modules/ui/audits/SecurityPosture";
-import { PerformancePosture } from "@/pro_modules/ui/audits/PerformancePosture";
-import { DnsEmailPosture } from "@/pro_modules/ui/audits/DnsEmailPosture";
-import { AuditPreferences } from "@/pro_modules/ui/audits/AuditPreferences";
-import { Overview } from "@/pro_modules/ui/audits/Overview";
-import { DomainScanner } from "@/pro_modules/ui/audits/DomainScanner";
 import { useMemo } from "react";
+
+const DatabasesView = lazy(() => import("@/components/DatabasesView").then((module) => ({ default: module.DatabasesView })));
+const SettingsView = lazy(() => import("@/components/SettingsView").then((module) => ({ default: module.SettingsView })));
+const PermissionsView = lazy(() => import("@/components/PermissionsView").then((module) => ({ default: module.PermissionsView })));
+const KVNamespacesView = lazy(() => import("@/components/KVNamespacesView").then((module) => ({ default: module.KVNamespacesView })));
+const LocalExplorerView = lazy(() => import("@/components/LocalExplorerView").then((module) => ({ default: module.LocalExplorerView })));
+const QueuesView = lazy(() => import("@/components/QueuesView").then((module) => ({ default: module.QueuesView })));
+const RemoteOverviewView = lazy(() => import("@/components/RemoteOverviewView").then((module) => ({ default: module.RemoteOverviewView })));
+const StudioView = lazy(() => import("@/components/StudioView").then((module) => ({ default: module.StudioView })));
+const WorkersView = lazy(() => import("@/components/WorkersView").then((module) => ({ default: module.WorkersView })));
+const R2BucketsView = lazy(() => import("@/pro_modules/frontend/R2BucketsView").then((module) => ({ default: module.R2BucketsView })));
+const SecurityPosture = lazy(() => import("@/pro_modules/ui/audits/SecurityPosture").then((module) => ({ default: module.SecurityPosture })));
+const PerformancePosture = lazy(() => import("@/pro_modules/ui/audits/PerformancePosture").then((module) => ({ default: module.PerformancePosture })));
+const DnsEmailPosture = lazy(() => import("@/pro_modules/ui/audits/DnsEmailPosture").then((module) => ({ default: module.DnsEmailPosture })));
+const AuditPreferences = lazy(() => import("@/pro_modules/ui/audits/AuditPreferences").then((module) => ({ default: module.AuditPreferences })));
+const AuditOverview = lazy(() => import("@/pro_modules/ui/audits/Overview").then((module) => ({ default: module.Overview })));
+const DomainScanner = lazy(() => import("@/pro_modules/ui/audits/DomainScanner").then((module) => ({ default: module.DomainScanner })));
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 interface NavGroup {
@@ -246,11 +250,16 @@ interface TitleBarProps {
   onToggle: () => void;
   title: string;
   onNavigate: (id: string) => void;
+  onOpenCommandPalette: () => void;
 }
 
-function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
+function TitleBar({ collapsed, onToggle, title, onNavigate, onOpenCommandPalette }: TitleBarProps) {
   const { t } = useI18n();
   const { status, downloadProgress, update } = useUpdater();
+  const activeAccount = useAppStore((s) => s.activeAccount);
+  const privacySettings = useAppStore((s) => s.privacySettings);
+  const blurAmount = privacySettings.enabled && privacySettings.accountInfo ? privacySettings.blurAmount : 0;
+  const blurStyle = blurAmount > 0 ? { filter: `blur(${blurAmount}px)` } : undefined;
 
   return (
     <header
@@ -283,9 +292,16 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
       {/* Drag region + title */}
       <div
         data-tauri-drag-region
-        className="flex-1 flex items-center h-full px-4 overflow-hidden"
+        className="flex-1 flex items-center gap-3 h-full px-4 overflow-hidden"
       >
         <span className="text-sm font-semibold text-foreground/80 truncate">{title}</span>
+        <Badge
+          variant="outline"
+          className="hidden max-w-[260px] truncate px-2 py-0 text-[10px] font-medium text-muted-foreground md:inline-flex"
+          style={blurStyle}
+        >
+          {activeAccount?.name ?? t("common.notAvailable")}
+        </Badge>
       </div>
 
       {/* Update Indicator — not draggable */}
@@ -342,6 +358,17 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
           variant="ghost"
           size="sm"
           className="h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60"
+          onClick={onOpenCommandPalette}
+          aria-label={t("title.commandCenter")}
+        >
+          <Command className="mr-2" size={14} />
+          {t("title.commandCenter")}
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-muted-foreground hover:text-foreground hover:bg-muted/60"
           onClick={() => open("https://github.com/makerjackie/cf-desk")}
         >
           <Github className="mr-2" size={14} />
@@ -353,8 +380,25 @@ function TitleBar({ collapsed, onToggle, title, onNavigate }: TitleBarProps) {
 }
 
 // ── Simple page router ────────────────────────────────────────────────────────
-function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (id: string) => void }) {
+function PageLoading() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+    </div>
+  );
+}
+
+function PageContent({
+  activeId,
+  onNavigate,
+  onOpenCommandPalette,
+}: {
+  activeId: string;
+  onNavigate: (id: string) => void;
+  onOpenCommandPalette: () => void;
+}) {
   const { t } = useI18n();
+  if (activeId === "studio") return <StudioView onNavigate={onNavigate} onOpenCommandPalette={onOpenCommandPalette} />;
   if (activeId === "overview") return <RemoteOverviewView onNavigate={onNavigate} />;
   if (activeId === "d1") return <DatabasesView />;
   if (activeId === "r2") return <R2BucketsView />;
@@ -364,7 +408,7 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
   if (activeId === "local-explorer") return <LocalExplorerView />;
   if (activeId === "permissions") return <PermissionsView />;
   if (activeId === "settings") return <SettingsView />;
-  if (activeId === "audit") return <Overview onNavigate={onNavigate} />;
+  if (activeId === "audit") return <AuditOverview onNavigate={onNavigate} />;
   if (activeId === "audit-scanner") return <DomainScanner onNavigate={onNavigate} />;
   if (activeId === "audit-security") return <SecurityPosture />;
   if (activeId === "audit-performance") return <PerformancePosture />;
@@ -390,8 +434,11 @@ function PageContent({ activeId, onNavigate }: { activeId: string; onNavigate: (
 
 export function Layout() {
   const { t } = useI18n();
-  const [collapsed, setCollapsed] = useState(false);
-  const [activeId, setActiveId] = useState("overview");
+  const [commandOpen, setCommandOpen] = useState(false);
+  const collapsed = useAppStore((s) => s.sidebarCollapsed);
+  const setSidebarCollapsed = useAppStore((s) => s.setSidebarCollapsed);
+  const activeNavId = useAppStore((s) => s.activeNavId);
+  const setActiveNavId = useAppStore((s) => s.setActiveNavId);
   const userProfile = useAppStore((s) => s.userProfile);
   const setUserProfile = useAppStore((s) => s.setUserProfile);
   const activeAccount = useAppStore((s) => s.activeAccount);
@@ -402,7 +449,8 @@ export function Layout() {
       {
         label: t("nav.overviewGroup"),
         items: [
-          { id: "overview", label: t("nav.overview"), icon: LayoutDashboard },
+          { id: "studio", label: t("nav.studio"), icon: CloudCog },
+          { id: "overview", label: t("nav.remoteOverview"), icon: LayoutDashboard },
         ],
       },
       {
@@ -450,6 +498,17 @@ export function Layout() {
     return groups;
   }, [config?.enable_audits, t]);
 
+  const flatNavItems = useMemo(
+    () => navGroups.flatMap((group) => group.items.map((item) => ({ ...item, group: group.label }))),
+    [navGroups],
+  );
+
+  const activeId = flatNavItems.some((item) => item.id === activeNavId)
+    ? activeNavId
+    : "studio";
+
+  const navigate = (id: string) => setActiveNavId(id);
+
   useCloudflareAccounts();
 
   // Fetch User Profile on mount
@@ -491,7 +550,47 @@ export function Layout() {
     };
   }, []);
 
-  const currentNav = navGroups.flatMap((g) => g.items).find(
+  useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return false;
+      return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+    };
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      const modifier = event.metaKey || event.ctrlKey;
+      if (!modifier) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "k") {
+        event.preventDefault();
+        setCommandOpen((open) => !open);
+        return;
+      }
+
+      if (key === "b" && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        setSidebarCollapsed(!collapsed);
+        return;
+      }
+
+      const digit = Number.parseInt(event.key, 10);
+      if (!Number.isNaN(digit) && digit > 0 && digit <= flatNavItems.length && !isEditableTarget(event.target)) {
+        event.preventDefault();
+        navigate(flatNavItems[digit - 1].id);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => window.removeEventListener("keydown", handleKeydown);
+  }, [collapsed, flatNavItems, setSidebarCollapsed]);
+
+  useEffect(() => {
+    if (activeId !== activeNavId) {
+      setActiveNavId(activeId);
+    }
+  }, [activeId, activeNavId, setActiveNavId]);
+
+  const currentNav = flatNavItems.find(
     (n) => n.id === activeId,
   );
   const pageTitle = currentNav?.label ?? "CFDesk";
@@ -504,7 +603,7 @@ export function Layout() {
         <Sidebar
           collapsed={collapsed}
           activeId={activeId}
-          onNavigate={setActiveId}
+          onNavigate={navigate}
           userProfile={userProfile}
           activeAccount={activeAccount}
           navGroups={navGroups}
@@ -515,17 +614,31 @@ export function Layout() {
           {/* Title bar */}
           <TitleBar
             collapsed={collapsed}
-            onToggle={() => setCollapsed((c) => !c)}
+            onToggle={() => setSidebarCollapsed(!collapsed)}
             title={pageTitle}
-            onNavigate={setActiveId}
+            onNavigate={navigate}
+            onOpenCommandPalette={() => setCommandOpen(true)}
           />
 
           {/* Content area */}
           <main className="flex-1 overflow-y-auto custom-scrollbar p-6">
-            <PageContent activeId={activeId} onNavigate={setActiveId} />
+            <Suspense fallback={<PageLoading />}>
+              <PageContent
+                activeId={activeId}
+                onNavigate={navigate}
+                onOpenCommandPalette={() => setCommandOpen(true)}
+              />
+            </Suspense>
           </main>
         </div>
       </div>
+      <CommandPalette
+        open={commandOpen}
+        onOpenChange={setCommandOpen}
+        navItems={flatNavItems}
+        onNavigate={navigate}
+        activeAccount={activeAccount}
+      />
     </AuditZoneProvider>
   );
 }

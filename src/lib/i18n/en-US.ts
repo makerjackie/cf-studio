@@ -1,5 +1,7 @@
 export const enUS = {
     "nav.overviewGroup": "Workspace",
+    "nav.studio": "Studio",
+    "nav.remoteOverview": "Remote Overview",
     "nav.overview": "Overview",
     "nav.storageData": "Storage & Data",
     "nav.r2": "R2 Buckets",
@@ -65,6 +67,7 @@ export const enUS = {
     "title.updateError": "Update Error",
     "title.expandSidebar": "Expand sidebar",
     "title.collapseSidebar": "Collapse sidebar",
+    "title.commandCenter": "Commands",
     "kv.title": "KV Namespaces",
     "kv.subtitle": "Browse and edit remote Workers KV namespaces.",
     "kv.body": "Use KV for lightweight remote key-value inspection, JSON formatting, TTL checks, and safe edits.",

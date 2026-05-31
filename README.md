@@ -23,13 +23,19 @@ After the April 18 baseline, this fork moved beyond the original CF Studio scope
 
 ## Core Capabilities
 
+- **CFDesk Home:** a local command center for account status, resource counts, readiness checks, cache freshness, Workers health, Wrangler runbooks, and quick docs.
 - **R2 asset management:** browse buckets, upload/download files, preview images, copy public URLs, and inspect public domain status.
 - **D1 database work:** browse databases, inspect tables, run SQL, view schemas, manage indexes, and export useful data formats.
 - **Workers operations:** list Workers, inspect deployments/settings, copy routes, open dashboard links, check recent health, and manage observability settings.
 - **KV and Queues visibility:** lightweight remote resource inspection and operational entry points.
 - **Token checks:** verify whether the current token can access the Cloudflare endpoints CFDesk needs.
+- **Global commands:** `Cmd/Ctrl+K` opens navigation, docs, account actions, copyable Wrangler commands, and token/env snippets.
 - **Privacy controls:** blur sensitive account, database, bucket, and object names during demos or screen shares.
 - **Local Explorer handoff:** link to Cloudflare's official Local Explorer for local `wrangler dev` bindings while CFDesk stays focused on remote account resources.
+
+## v1.3.0 CFDesk Home Release
+
+The v1.3.0 release adds CFDesk Home, the command center, keyboard shortcuts, cache freshness, workspace readiness checks, Workers health summaries, Wrangler runbooks, and code splitting for major app views. See [docs/cfdesk-release-1.3.0.md](docs/cfdesk-release-1.3.0.md) for the full improvement list.
 
 ## Install / Update
 

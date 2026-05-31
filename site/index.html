@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CFDesk | Cloudflare desktop workspace</title>
+    <title>CFDesk | Remote Cloudflare operations desktop</title>
     <meta
       name="description"
-      content="CFDesk is a desktop workspace for Cloudflare R2, D1, Workers, Queues, KV, and token checks."
+      content="CFDesk is a remote-operations desktop for Cloudflare R2, D1, Workers, Queues, KV, and token checks."
     />
     <link rel="icon" href="/assets/cfdesk-mark.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
@@ -22,6 +22,7 @@
         <a href="#features" data-i18n="navFeatures">功能</a>
         <a href="#updates" data-i18n="navUpdates">更新</a>
         <a href="#thanks" data-i18n="navThanks">致谢</a>
+        <a href="https://github.com/makerjackie/cf-desk/releases/latest" data-i18n="navDownload">下载</a>
         <a href="https://github.com/makerjackie/cf-desk">GitHub</a>
         <span class="language-switch" aria-label="Language">
           <button type="button" data-lang-option="zh">中文</button>
@@ -34,13 +35,14 @@
       <section class="hero">
         <img class="hero-shot" src="/assets/r2-buckets.png" alt="CFDesk R2 bucket management screen" />
         <div class="hero-copy">
-          <p class="eyebrow" data-i18n="heroEyebrow">远程 Cloudflare 资源工作台</p>
+          <p class="eyebrow" data-i18n="heroEyebrow">Cloudflare 远程运维桌面端</p>
           <h1>CFDesk</h1>
           <p class="lead" data-i18n="heroLead">
-            面向 Cloudflare 日常运维的桌面工作台。管理 R2、D1、Workers、Queues、KV 和 Token 权限时，把高频操作放在一个低干扰界面里。
+            CFDesk 把 R2 文件、D1 数据、Workers 与 Queues 运维、KV 检查和 Token 权限放到一个本机界面，适合每天反复查看、复制、确认和排查的 Cloudflare 账号工作。
           </p>
           <div class="actions" aria-label="Primary links">
-            <a class="button primary" href="https://github.com/makerjackie/cf-desk" data-i18n="repoLink">查看仓库</a>
+            <a class="button primary" href="https://github.com/makerjackie/cf-desk/releases/latest" data-i18n="releaseLink">下载最新版</a>
+            <a class="button secondary" href="https://github.com/makerjackie/cf-desk" data-i18n="githubLink">查看 GitHub</a>
             <a class="button secondary" href="#updates" data-i18n="updatesLink">查看更新</a>
           </div>
         </div>
@@ -49,14 +51,14 @@
       <section class="band intro" aria-labelledby="intro-title">
         <div class="section-head">
           <p class="kicker" data-i18n="positioningKicker">产品定位</p>
-          <h2 id="intro-title" data-i18n="positioningTitle">为反复出现的 Cloudflare 运维任务而做。</h2>
+          <h2 id="intro-title" data-i18n="positioningTitle">把 Cloudflare 账号里的日常动作收进一个可确认的工作台。</h2>
         </div>
         <div class="intro-grid">
           <p data-i18n="positioningBodyA">
-            CFDesk 专注远程账号资源：R2 素材、D1 数据、Workers 运维、Queues、KV 和账号权限检查。
+            远程优先：R2、D1、Workers、Queues、KV、Token 权限与账号级状态，都围绕真实 Cloudflare 账号工作。
           </p>
           <p data-i18n="positioningBodyB">
-            需要本地 <code>wrangler dev</code> 绑定浏览时，CFDesk 会把用户引导到 Cloudflare 官方 Local Explorer。
+            本地绑定仍交给官方 Local Explorer；CFDesk 负责远程资源、常用命令和高风险写操作前的确认。
           </p>
         </div>
       </section>
@@ -64,13 +66,13 @@
       <section id="features" class="band features" aria-labelledby="features-title">
         <div class="section-head">
           <p class="kicker" data-i18n="featuresKicker">功能范围</p>
-          <h2 id="features-title" data-i18n="featuresTitle">覆盖存储、数据、计算和安全检查的高频入口。</h2>
+          <h2 id="features-title" data-i18n="featuresTitle">为查看、复制、发布和安全确认设计的入口。</h2>
         </div>
         <div class="feature-grid">
           <article>
             <span>01</span>
             <h3 data-i18n="featureR2Title">R2 素材工作流</h3>
-            <p data-i18n="featureR2Body">浏览存储桶，上传和下载文件，预览图片，复制公开 URL，检查公开域名，并在危险对象操作前确认。</p>
+            <p data-i18n="featureR2Body">浏览存储桶，上传和下载文件，预览图片，复制公开 URL，检查公开域名；删除或覆盖对象前先确认。</p>
           </article>
           <article>
             <span>02</span>
@@ -104,7 +106,7 @@
       <section id="updates" class="band updates" aria-labelledby="updates-title">
         <div class="section-head">
           <p class="kicker" data-i18n="updatesKicker">4 月 18 日之后</p>
-          <h2 id="updates-title" data-i18n="updatesTitle">一个有独立方向的远程运维 fork。</h2>
+          <h2 id="updates-title" data-i18n="updatesTitle">一个独立命名、独立发布的 Cloudflare 运维 fork。</h2>
         </div>
         <div class="update-list">
           <div>
@@ -130,12 +132,12 @@
         <img src="/assets/cfdesk-mark.svg" alt="" />
         <div>
           <p class="kicker" data-i18n="thanksKicker">致谢</p>
-          <h2 id="thanks-title" data-i18n="thanksTitle">感谢 CF Studio。</h2>
+          <h2 id="thanks-title" data-i18n="thanksTitle">向 CF Studio 致谢。</h2>
           <p data-i18n="thanksBodyA">
-            CFDesk 基于 CF Studio 的版本继续改进。我们感谢原项目提供的桌面基础。
+            CFDesk 从 CF Studio 的桌面基础继续出发；原项目让这个 fork 有了可以快速推进的起点。
           </p>
           <p data-i18n="thanksBodyB">
-            CFDesk 在名称、站点、图标、README 和功能主线中与原项目区分开，并继续向远程 Cloudflare 资源管理方向推进。
+            现在我们使用独立名称、图标、站点、Release 和产品主线，继续把重心放在远程 Cloudflare 资源管理。
           </p>
         </div>
       </section>

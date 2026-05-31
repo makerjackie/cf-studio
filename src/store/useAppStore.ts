@@ -177,6 +177,9 @@ interface AppState {
   r2ViewMode: R2ViewMode;
   r2SortField: R2SortField;
   r2SortDirection: R2SortDirection;
+  activeNavId: string;
+  sidebarCollapsed: boolean;
+  recentNavIds: string[];
 
   // ── Updater State ──
   updateStatus: "idle" | "checking" | "available" | "downloading" | "up-to-date" | "error";
@@ -218,6 +221,8 @@ interface AppState {
   setSaveQueryResultsRowLimit: (limit: number | null) => void;
   setR2ViewMode: (mode: R2ViewMode) => void;
   setR2Sort: (field: R2SortField, direction: R2SortDirection) => void;
+  setActiveNavId: (id: string) => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
   setSessionId: (id: string) => void;
   refreshSession: () => void;
   
@@ -300,6 +305,9 @@ export const useAppStore = create<AppState>()(
       r2ViewMode: "list",
       r2SortField: "name",
       r2SortDirection: "asc",
+      activeNavId: "studio",
+      sidebarCollapsed: false,
+      recentNavIds: ["studio"],
       updateStatus: "idle",
       updateData: null,
       downloadProgress: 0,
@@ -330,6 +338,15 @@ export const useAppStore = create<AppState>()(
       setSaveQueryResultsRowLimit: (limit) => set({ saveQueryResultsRowLimit: limit }),
       setR2ViewMode: (r2ViewMode) => set({ r2ViewMode }),
       setR2Sort: (r2SortField, r2SortDirection) => set({ r2SortField, r2SortDirection }),
+      setActiveNavId: (activeNavId) =>
+        set((state) => ({
+          activeNavId,
+          recentNavIds: [
+            activeNavId,
+            ...state.recentNavIds.filter((id) => id !== activeNavId),
+          ].slice(0, 8),
+        })),
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
       setSessionId: (id) => set({ sessionId: id }),
       refreshSession: () => set({ sessionId: crypto.randomUUID() }),
       setUpdateStatus: (status) => set({ updateStatus: status }),
@@ -484,6 +501,9 @@ export const useAppStore = create<AppState>()(
         r2ViewMode: state.r2ViewMode,
         r2SortField: state.r2SortField,
         r2SortDirection: state.r2SortDirection,
+        activeNavId: state.activeNavId,
+        sidebarCollapsed: state.sidebarCollapsed,
+        recentNavIds: state.recentNavIds,
         databases: state.databases,
         kvNamespaces: state.kvNamespaces,
         r2Buckets: state.r2Buckets,
