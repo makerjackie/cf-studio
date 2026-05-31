@@ -24,6 +24,7 @@ import {
 } from "@/lib/remoteResources";
 import { readQueueMetrics } from "@/lib/queueMetrics";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -84,6 +85,7 @@ function SectionError({ error }: { error?: string | null }) {
 }
 
 export function QueuesView() {
+  const { t } = useI18n();
   const [overview, setOverview] = useState<QueuesOverview | null>(null);
   const [selectedQueueId, setSelectedQueueId] = useState<string | null>(null);
   const [detail, setDetail] = useState<QueueDetail | null>(null);
@@ -152,7 +154,7 @@ export function QueuesView() {
     if (!selectedQueueId) return;
     const delay = delaySeconds.trim() ? Number(delaySeconds) : undefined;
     if (delay !== undefined && (!Number.isFinite(delay) || delay < 0)) {
-      setError("Delay must be empty or a positive number.");
+      setError(t("queues.delayPositive"));
       return;
     }
     if (contentType === "json") {
@@ -163,18 +165,18 @@ export function QueuesView() {
           JSON.parse(body);
         }
       } catch (jsonError) {
-        setError(`Invalid JSON: ${String(jsonError)}`);
+        setError(t("kv.invalidJson", { error: String(jsonError) }));
         return;
       }
     }
     const batchMessages = body.split("\n").filter((line) => line.trim());
     if (batchMode && batchMessages.length === 0) {
-      setError("Batch mode needs at least one message.");
+      setError(t("queues.batchNeedsMessage"));
       return;
     }
     const messageCount = batchMode ? batchMessages.length : 1;
     const confirmed = window.confirm(
-      `Send ${messageCount} test message${messageCount === 1 ? "" : "s"} to ${queueName(selectedQueue)}? This writes to the remote Queue and may trigger production consumers.`
+      t("queues.confirmSend", { count: messageCount, queue: queueName(selectedQueue) })
     );
     if (!confirmed) return;
     setStatus("sending");
@@ -201,14 +203,14 @@ export function QueuesView() {
     <div className="flex h-full flex-col gap-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Queues</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("nav.queues")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Inspect remote Queues and send test messages to validate Worker producers and consumers.
+            {t("queues.subtitle")}
           </p>
         </div>
         <Button variant="outline" onClick={loadQueues} disabled={status === "loading"}>
           {status === "loading" ? <Loader2 size={15} className="mr-2 animate-spin" /> : <RefreshCw size={15} className="mr-2" />}
-          Refresh
+          {t("common.refresh")}
         </Button>
       </div>
 
@@ -223,12 +225,12 @@ export function QueuesView() {
           <div className="border-b border-border p-3">
             <div className="relative">
               <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Queues" className="h-9 pl-8" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("queues.search")} className="h-9 pl-8" />
             </div>
           </div>
           <div className="grid gap-2 overflow-y-auto p-3">
             {filteredQueues.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No Queues found.</p>
+              <p className="p-4 text-sm text-muted-foreground">{t("queues.empty")}</p>
             ) : (
               filteredQueues.map((queue) => {
                 const id = queueId(queue);
@@ -258,7 +260,7 @@ export function QueuesView() {
         <section className="min-h-0 overflow-y-auto">
           {!selectedQueue ? (
             <div className="flex h-full items-center justify-center rounded-lg border border-border bg-muted/20 p-8 text-sm text-muted-foreground">
-              Select a Queue to inspect details and send test messages.
+              {t("queues.selectPrompt")}
             </div>
           ) : (
             <div className="grid gap-4">
@@ -271,7 +273,7 @@ export function QueuesView() {
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => writeText(selectedQueueId ?? "", { label: "CFDesk" })}>
                       <Clipboard size={14} className="mr-2" />
-                      Copy ID
+                      {t("queues.copyId")}
                     </Button>
                     <Button variant="ghost" size="icon" onClick={() => selectedQueueId && loadDetail(selectedQueueId)} disabled={detailStatus === "loading"}>
                       {detailStatus === "loading" ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
@@ -283,21 +285,21 @@ export function QueuesView() {
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-lg border border-border bg-background p-4">
                   <p className="text-2xl font-semibold">{formatCompact(metrics.backlogCount)}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Backlog messages</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t("queues.backlogMessages")}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-background p-4">
                   <p className="text-2xl font-semibold">{formatBytes(metrics.backlogBytes)}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Backlog size</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t("queues.backlogSize")}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-background p-4">
                   <p className="truncate text-lg font-semibold">{formatTimestampMs(metrics.oldestMessageTimestampMs)}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Oldest message</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t("queues.oldestMessage")}</p>
                 </div>
                 <div className="rounded-lg border border-border bg-background p-4">
                   <p className="text-2xl font-semibold">
                     {consumers.length}/{producers.length}
                   </p>
-                  <p className="mt-1 text-sm text-muted-foreground">Consumers / producers</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{t("queues.consumersProducers")}</p>
                 </div>
               </div>
 
@@ -308,7 +310,7 @@ export function QueuesView() {
                 <div className="rounded-lg border border-border bg-background p-4">
                   <div className="flex items-center gap-2">
                     <Play size={16} className="text-primary" />
-                    <h3 className="text-sm font-semibold">Send test message</h3>
+                    <h3 className="text-sm font-semibold">{t("queues.sendTest")}</h3>
                   </div>
                   <div className="mt-4 grid gap-3">
                     <div className="flex flex-wrap gap-2">
@@ -316,31 +318,31 @@ export function QueuesView() {
                         JSON
                       </Button>
                       <Button size="sm" variant={contentType === "text" ? "default" : "outline"} onClick={() => setContentType("text")}>
-                        Text
+                        {t("queues.text")}
                       </Button>
                       <Button size="sm" variant={batchMode ? "default" : "outline"} onClick={() => setBatchMode((value) => !value)}>
-                        Batch
+                        {t("queues.batch")}
                       </Button>
                     </div>
                     <Textarea
                       value={body}
                       onChange={(event) => setBody(event.target.value)}
                       className="min-h-[220px] resize-none font-mono text-xs"
-                      placeholder={batchMode ? "One message per line" : "Message body"}
+                      placeholder={batchMode ? t("queues.oneMessagePerLine") : t("queues.messageBody")}
                     />
                     <div className="flex flex-wrap items-end gap-3">
                       <div>
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Delay seconds</label>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("queues.delaySeconds")}</label>
                         <Input
                           value={delaySeconds}
                           onChange={(event) => setDelaySeconds(event.target.value.replace(/[^\d]/g, ""))}
-                          placeholder="Optional"
+                          placeholder={t("common.optional")}
                           className="w-36"
                         />
                       </div>
                       <Button onClick={sendMessage} disabled={status === "sending" || !selectedQueueId}>
                         {status === "sending" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Send size={14} className="mr-2" />}
-                        Send
+                        {t("queues.send")}
                       </Button>
                     </div>
                   </div>
@@ -350,7 +352,7 @@ export function QueuesView() {
                   <div className="rounded-lg border border-border bg-background p-4">
                     <div className="flex items-center gap-2">
                       <Users size={16} className="text-primary" />
-                      <h3 className="text-sm font-semibold">Relations</h3>
+                      <h3 className="text-sm font-semibold">{t("queues.relations")}</h3>
                     </div>
                     <pre className="mt-3 max-h-60 overflow-auto rounded-md bg-muted p-3 text-xs text-muted-foreground">
                       {JSON.stringify({ consumers, producers }, null, 2)}
@@ -360,24 +362,24 @@ export function QueuesView() {
                     <div className="flex items-start gap-2">
                       <AlertTriangle size={15} className="mt-0.5 text-amber-600" />
                       <p className="text-sm leading-6 text-muted-foreground">
-                        Sending a test message writes to the remote Queue. It may trigger production consumers.
+                        {t("queues.sendWarning")}
                       </p>
                     </div>
                   </div>
                   {result !== null && (
                     <div className="rounded-lg border border-border bg-background p-4">
-                      <h3 className="text-sm font-semibold">Send result</h3>
+                      <h3 className="text-sm font-semibold">{t("queues.sendResult")}</h3>
                       <div className="mt-3 grid gap-2 md:grid-cols-3">
                         <div className="rounded-md bg-muted/30 px-3 py-2">
-                          <p className="text-xs text-muted-foreground">Backlog</p>
+                          <p className="text-xs text-muted-foreground">{t("queues.backlog")}</p>
                           <p className="mt-1 font-mono text-sm">{formatCompact(resultMetrics.backlogCount)}</p>
                         </div>
                         <div className="rounded-md bg-muted/30 px-3 py-2">
-                          <p className="text-xs text-muted-foreground">Backlog size</p>
+                          <p className="text-xs text-muted-foreground">{t("queues.backlogSize")}</p>
                           <p className="mt-1 font-mono text-sm">{formatBytes(resultMetrics.backlogBytes)}</p>
                         </div>
                         <div className="rounded-md bg-muted/30 px-3 py-2">
-                          <p className="text-xs text-muted-foreground">Oldest message</p>
+                          <p className="text-xs text-muted-foreground">{t("queues.oldestMessage")}</p>
                           <p className="mt-1 truncate font-mono text-sm">{formatTimestampMs(resultMetrics.oldestMessageTimestampMs)}</p>
                         </div>
                       </div>

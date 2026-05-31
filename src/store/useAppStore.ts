@@ -32,6 +32,17 @@ export interface PrivacySettings {
 }
 
 export type AppLanguage = "en-US" | "zh-CN";
+const APP_STORAGE_KEY = "cf-desk-cache";
+
+function hasPersistedAppCache(): boolean {
+  if (typeof window === "undefined") return true;
+
+  try {
+    return window.localStorage.getItem(APP_STORAGE_KEY) !== null;
+  } catch {
+    return true;
+  }
+}
 
 // ── KV cache type ─────────────────────────────────────────────────────────────
 
@@ -172,6 +183,7 @@ interface AppState {
   isRefreshingSession: boolean;
   privacySettings: PrivacySettings;
   language: AppLanguage;
+  hasCompletedOnboarding: boolean;
   saveQueryResultsEnabled: boolean;
   saveQueryResultsRowLimit: number | null;
   r2ViewMode: R2ViewMode;
@@ -217,6 +229,7 @@ interface AppState {
   setAutoUpdate: (enabled: boolean) => void;
   setPrivacySettings: (settings: Partial<PrivacySettings>) => void;
   setLanguage: (language: AppLanguage) => void;
+  completeOnboarding: () => void;
   setSaveQueryResultsEnabled: (enabled: boolean) => void;
   setSaveQueryResultsRowLimit: (limit: number | null) => void;
   setR2ViewMode: (mode: R2ViewMode) => void;
@@ -300,6 +313,7 @@ export const useAppStore = create<AppState>()(
         blurAmount: 5,
       },
       language: "en-US",
+      hasCompletedOnboarding: hasPersistedAppCache(),
       saveQueryResultsEnabled: false,
       saveQueryResultsRowLimit: 50,
       r2ViewMode: "list",
@@ -334,6 +348,7 @@ export const useAppStore = create<AppState>()(
       setAutoUpdate: (enabled) => set({ autoUpdate: enabled }),
       setPrivacySettings: (settings) => set((s) => ({ privacySettings: { ...s.privacySettings, ...settings } })),
       setLanguage: (language) => set({ language }),
+      completeOnboarding: () => set({ hasCompletedOnboarding: true }),
       setSaveQueryResultsEnabled: (enabled) => set({ saveQueryResultsEnabled: enabled }),
       setSaveQueryResultsRowLimit: (limit) => set({ saveQueryResultsRowLimit: limit }),
       setR2ViewMode: (r2ViewMode) => set({ r2ViewMode }),
@@ -484,7 +499,7 @@ export const useAppStore = create<AppState>()(
       },
     }),
     {
-      name: "cf-desk-cache",          // localStorage key
+      name: APP_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
       // Only persist the data fields — actions are not serialisable.
       partialize: (state) => ({
@@ -496,6 +511,7 @@ export const useAppStore = create<AppState>()(
         autoUpdate: state.autoUpdate,
         privacySettings: state.privacySettings,
         language: state.language,
+        hasCompletedOnboarding: state.hasCompletedOnboarding,
         saveQueryResultsEnabled: state.saveQueryResultsEnabled,
         saveQueryResultsRowLimit: state.saveQueryResultsRowLimit,
         r2ViewMode: state.r2ViewMode,

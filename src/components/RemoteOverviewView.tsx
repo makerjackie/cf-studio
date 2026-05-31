@@ -24,6 +24,7 @@ import {
   type WorkersOverview,
 } from "@/lib/remoteResources";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 type LoadState = "idle" | "loading" | "error";
 
@@ -31,8 +32,8 @@ interface OverviewProps {
   onNavigate: (id: string) => void;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "Unknown";
+function formatDate(value: string | null | undefined, unknownLabel: string) {
+  if (!value) return unknownLabel;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
@@ -84,6 +85,7 @@ function RiskItem({ title, body }: { title: string; body: string }) {
 }
 
 export function RemoteOverviewView({ onNavigate }: OverviewProps) {
+  const { t } = useI18n();
   const activeAccount = useAppStore((state) => state.activeAccount);
   const userProfile = useAppStore((state) => state.userProfile);
   const d1 = useD1Databases();
@@ -136,12 +138,12 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
     <div className="flex h-full flex-col gap-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Remote Overview</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("remote.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Cloudflare resources for the selected account.
+            {t("remote.subtitle")}
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <Badge variant="secondary">{activeAccount?.name ?? "No account selected"}</Badge>
+            <Badge variant="secondary">{activeAccount?.name ?? t("remote.noAccountSelected")}</Badge>
             {userProfile?.email && <Badge variant="outline">{userProfile.email}</Badge>}
           </div>
         </div>
@@ -159,7 +161,7 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
           ) : (
             <RefreshCw size={15} className="mr-2" />
           )}
-          Refresh
+          {t("common.refresh")}
         </Button>
       </div>
 
@@ -172,44 +174,44 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
       <section className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <CountTile
           icon={Box}
-          label="R2 buckets"
+          label={t("remote.tile.r2")}
           count={r2.state.status === "success" ? r2.state.data.length : "—"}
-          status={r2.isFromCache ? "cached" : undefined}
+          status={r2.isFromCache ? t("remote.cached") : undefined}
           onClick={() => onNavigate("r2")}
         />
         <CountTile
           icon={Database}
-          label="D1 databases"
+          label={t("remote.tile.d1")}
           count={d1.state.status === "success" ? d1.state.data.length : "—"}
-          status={d1.isFromCache ? "cached" : undefined}
+          status={d1.isFromCache ? t("remote.cached") : undefined}
           onClick={() => onNavigate("d1")}
         />
-        <CountTile icon={KeyRound} label="KV namespaces" count={kv.length} onClick={() => onNavigate("kv")} />
+        <CountTile icon={KeyRound} label={t("remote.tile.kv")} count={kv.length} onClick={() => onNavigate("kv")} />
         <CountTile
           icon={Workflow}
-          label="Workers"
+          label={t("remote.tile.workers")}
           count={workers?.workers.length ?? "—"}
-          status={workerRecentErrors > 0 ? `${workerRecentErrors} errors` : undefined}
+          status={workerRecentErrors > 0 ? t("remote.workerErrors", { count: workerRecentErrors }) : undefined}
           onClick={() => onNavigate("workers")}
         />
-        <CountTile icon={MessageSquare} label="Queues" count={queues?.queues.length ?? "—"} onClick={() => onNavigate("queues")} />
-        <CountTile icon={ShieldCheck} label="Token check" count="Open" onClick={() => onNavigate("permissions")} />
+        <CountTile icon={MessageSquare} label={t("remote.tile.queues")} count={queues?.queues.length ?? "—"} onClick={() => onNavigate("queues")} />
+        <CountTile icon={ShieldCheck} label={t("remote.tile.tokenCheck")} count={t("common.open")} onClick={() => onNavigate("permissions")} />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <div className="rounded-lg border border-border bg-background">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold">Recently updated Workers</h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">Remote scripts sorted by modification time.</p>
+              <h2 className="text-sm font-semibold">{t("remote.recentWorkers")}</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">{t("remote.recentWorkersDesc")}</p>
             </div>
             <Button variant="ghost" size="sm" onClick={() => onNavigate("workers")}>
-              Open Workers
+              {t("remote.openWorkers")}
             </Button>
           </div>
           <div className="divide-y divide-border">
             {recentlyModifiedWorkers.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No Workers loaded yet.</p>
+              <p className="p-4 text-sm text-muted-foreground">{t("remote.noWorkersLoaded")}</p>
             ) : (
               recentlyModifiedWorkers.map((worker) => (
                 <button
@@ -220,15 +222,15 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium">{worker.name}</p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
-                      Updated {formatDate(worker.modified_on ?? worker.created_on)}
+                      {t("remote.updatedAt", { date: formatDate(worker.modified_on ?? worker.created_on, t("common.unknown")) })}
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    {worker.domains.length > 0 && <Badge variant="secondary">domain</Badge>}
-                    {worker.routes.length > 0 && <Badge variant="secondary">route</Badge>}
-                    {worker.bindings.length > 0 && <Badge variant="outline">bindings</Badge>}
+                    {worker.domains.length > 0 && <Badge variant="secondary">{t("remote.workerDomain")}</Badge>}
+                    {worker.routes.length > 0 && <Badge variant="secondary">{t("remote.workerRoute")}</Badge>}
+                    {worker.bindings.length > 0 && <Badge variant="outline">{t("remote.workerBindings")}</Badge>}
                     {(worker.recent_metrics?.errors ?? 0) > 0 && (
-                      <Badge variant="destructive">{worker.recent_metrics?.errors} errors</Badge>
+                      <Badge variant="destructive">{t("remote.workerErrors", { count: worker.recent_metrics?.errors ?? 0 })}</Badge>
                     )}
                   </div>
                 </button>
@@ -239,23 +241,23 @@ export function RemoteOverviewView({ onNavigate }: OverviewProps) {
 
         <div className="grid gap-3">
           <RiskItem
-            title="Remote write operations need confirmation"
-            body="Deletes, overwrites, Worker secret changes, route changes, and domain changes should require a second confirmation before calling Cloudflare."
+            title={t("remote.risk.confirmTitle")}
+            body={t("remote.risk.confirmBody")}
           />
           <RiskItem
-            title={`${workerDomainCount} Worker traffic entry points`}
-            body="Custom domains and routes affect production traffic. Review them from the Worker detail page before editing."
+            title={t("remote.risk.trafficTitle", { count: workerDomainCount })}
+            body={t("remote.risk.trafficBody")}
           />
           <RiskItem
-            title={`${boundWorkers} Workers with visible bindings`}
-            body="Bindings connect Workers to D1, R2, KV, Queues, and other resources. Use the detail page to inspect missing permissions or unresolved resources."
+            title={t("remote.risk.bindingsTitle", { count: boundWorkers })}
+            body={t("remote.risk.bindingsBody")}
           />
           <RiskItem
-            title={`${workerRecentErrors} recent Worker errors`}
+            title={t("remote.risk.errorsTitle", { count: workerRecentErrors })}
             body={
               workers?.metrics_error
-                ? "Worker health metrics need Account Analytics read access. Resource lists still load without treating the Worker as unhealthy."
-                : `${workersWithRecentErrors} Workers reported errors in the last hour. Open Workers to filter and inspect them.`
+                ? t("remote.risk.errorsMetricsBody")
+                : t("remote.risk.errorsBody", { count: workersWithRecentErrors })
             }
           />
         </div>

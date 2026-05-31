@@ -5,19 +5,23 @@ import { Toaster } from "@/components/ui/toaster";
 import { useEffect, useState, lazy, Suspense } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "@/store/useAppStore";
+import { useI18n } from "@/lib/i18n";
+
+function ProFeatureFallback() {
+  const { t } = useI18n();
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-background text-muted-foreground p-10 text-center">
+      <h1 className="text-xl font-bold mb-2">{t("app.proRequiredTitle")}</h1>
+      <p className="text-sm max-w-xs">{t("app.proRequiredBody")}</p>
+    </div>
+  );
+}
 
 // Dynamic import for Pro-only ActivityDashboard
 const ActivityDashboard = lazy(() => 
   import("@/pro_modules/ui/ActivityDashboard")
     .then(module => ({ default: module.ActivityDashboard }))
-    .catch(() => ({ 
-      default: () => (
-        <div className="flex flex-col items-center justify-center h-screen bg-background text-muted-foreground p-10 text-center">
-            <h1 className="text-xl font-bold mb-2">Pro Feature Required</h1>
-            <p className="text-sm max-w-xs">Advanced Query History & Tracking is not included in this public CFDesk build.</p>
-        </div>
-      )
-    }))
+    .catch(() => ({ default: ProFeatureFallback }))
 );
 
 function App() {

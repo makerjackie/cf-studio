@@ -2,8 +2,10 @@ import { useAppStore } from "@/store/useAppStore";
 import { Card } from "@/components/ui/card";
 import { CloudCog } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 export function SessionRefreshModal() {
+  const { t } = useI18n();
   const isRefreshingSession = useAppStore((s) => s.isRefreshingSession);
   const [show, setShow] = useState(false);
 
@@ -26,9 +28,9 @@ export function SessionRefreshModal() {
           <CloudCog size={32} className="animate-spin" style={{ animationDuration: '3s' }} />
         </div>
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-foreground">Securing your connection...</h2>
+          <h2 className="text-xl font-bold tracking-tight text-foreground">{t("session.refreshTitle")}</h2>
           <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-            Your Cloudflare session expired. We're negotiating a fresh token in the background. This will just take a few seconds.
+            {t("session.refreshBody")}
           </p>
         </div>
       </Card>

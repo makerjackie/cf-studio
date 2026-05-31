@@ -8,10 +8,13 @@ import {
   Loader2,
   CloudCog,
   Terminal,
+  Languages,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
+import { useAppStore, type AppLanguage } from "@/store/useAppStore";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -35,12 +38,34 @@ interface SetupWizardProps {
 }
 
 export function SetupWizard({ children }: SetupWizardProps) {
-  const { t } = useI18n();
+  const { language, setLanguage, t } = useI18n();
+  const hasCompletedOnboarding = useAppStore((state) => state.hasCompletedOnboarding);
+  const completeOnboarding = useAppStore((state) => state.completeOnboarding);
   const [phase, setPhase] = useState<Phase>(isTauriRuntime ? "checking" : "done");
   const [status, setStatus] = useState<DependencyStatus | null>(null);
   const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState("Checking dependencies…");
+  const [message, setMessage] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const languageOptions: Array<{
+    value: AppLanguage;
+    label: string;
+    description: string;
+    marker: string;
+  }> = [
+    {
+      value: "en-US",
+      label: "English",
+      description: t("setup.languageEnglishDesc"),
+      marker: "Aa",
+    },
+    {
+      value: "zh-CN",
+      label: "简体中文",
+      description: t("setup.languageChineseDesc"),
+      marker: "中",
+    },
+  ];
 
   // ── Initial dependency check ─────────────────────────────────────────
   useEffect(() => {
@@ -73,7 +98,7 @@ export function SetupWizard({ children }: SetupWizardProps) {
 
     setPhase("installing");
     setProgress(0);
-    setMessage("Starting installation…");
+    setMessage(t("setup.installStarting"));
     setErrorMsg(null);
 
     let unlisten: UnlistenFn | undefined;
@@ -104,36 +129,55 @@ export function SetupWizard({ children }: SetupWizardProps) {
     } finally {
       unlisten?.();
     }
-  }, []);
+  }, [t]);
 
   // ── Render: pass-through when done ───────────────────────────────────
+  if (!hasCompletedOnboarding) {
+    return (
+      <WizardShell
+        title={t("setup.onboardingTitle")}
+        subtitle={t("setup.onboardingSubtitle")}
+        icon={Languages}
+      >
+        <div className="space-y-5">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">
+              {t("setup.languagePrompt")}
+            </p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {t("setup.languagePromptDesc")}
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {languageOptions.map((option) => (
+              <LanguageOption
+                key={option.value}
+                option={option}
+                selected={language === option.value}
+                onSelect={setLanguage}
+              />
+            ))}
+          </div>
+
+          <Button
+            className="w-full gap-2 font-medium"
+            size="lg"
+            onClick={completeOnboarding}
+          >
+            {t("setup.continue")}
+            <ArrowRight size={16} />
+          </Button>
+        </div>
+      </WizardShell>
+    );
+  }
+
   if (phase === "done") return <>{children}</>;
 
   // ── Render: full-screen wizard ───────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background">
-      {/* Subtle decorative gradient */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-1/4 -left-1/4 w-[60%] h-[60%] rounded-full bg-primary/[0.04] blur-[100px]" />
-        <div className="absolute -bottom-1/4 -right-1/4 w-[50%] h-[50%] rounded-full bg-primary/[0.03] blur-[100px]" />
-      </div>
-
-      <div className="relative w-full max-w-lg mx-4 rounded-xl border border-border bg-card p-8 shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary/10">
-            <CloudCog size={22} className="text-primary" strokeWidth={1.75} />
-          </div>
-              <div>
-                <h1 className="text-lg font-semibold text-foreground tracking-tight">
-                  {t("setup.title")}
-                </h1>
-                <p className="text-xs text-muted-foreground">
-                  {t("setup.subtitle")}
-                </p>
-              </div>
-        </div>
-
+    <WizardShell title={t("setup.title")} subtitle={t("setup.subtitle")} icon={CloudCog}>
         {/* ── Phase: Checking ─────────────────────────────────────── */}
         {phase === "checking" && (
           <div className="flex flex-col items-center gap-4 py-8">
@@ -200,7 +244,7 @@ export function SetupWizard({ children }: SetupWizardProps) {
                 {progress}%
               </p>
               <p className="text-xs text-muted-foreground truncate max-w-[70%] text-right">
-                {message}
+                {message || t("setup.installStarting")}
               </p>
             </div>
 
@@ -240,12 +284,96 @@ export function SetupWizard({ children }: SetupWizardProps) {
             </Button>
           </div>
         )}
+    </WizardShell>
+  );
+}
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+function WizardShell({
+  title,
+  subtitle,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ElementType;
+  children: ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background px-4">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-[size:44px_44px] opacity-30" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-24 border-b border-border/50 bg-card/40" />
+
+      <div className="relative w-full max-w-lg rounded-xl border border-border bg-card p-8 shadow-2xl">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+            <Icon size={22} className="text-primary" strokeWidth={1.75} />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-foreground">
+              {title}
+            </h1>
+            <p className="text-xs text-muted-foreground">
+              {subtitle}
+            </p>
+          </div>
+        </div>
+        {children}
       </div>
     </div>
   );
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+function LanguageOption({
+  option,
+  selected,
+  onSelect,
+}: {
+  option: {
+    value: AppLanguage;
+    label: string;
+    description: string;
+    marker: string;
+  };
+  selected: boolean;
+  onSelect: (language: AppLanguage) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={() => onSelect(option.value)}
+      className={cn(
+        "group flex min-h-[118px] flex-col justify-between rounded-lg border p-4 text-left transition-colors",
+        selected
+          ? "border-primary bg-primary/10 text-foreground shadow-sm"
+          : "border-border bg-background/80 text-foreground hover:border-primary/50 hover:bg-muted/40"
+      )}
+    >
+      <span className="flex items-center justify-between gap-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border/60 bg-card text-sm font-semibold">
+          {option.marker}
+        </span>
+        <span
+          className={cn(
+            "h-4 w-4 rounded-full border transition-colors",
+            selected ? "border-primary bg-primary shadow-[inset_0_0_0_3px_var(--card)]" : "border-muted-foreground/40"
+          )}
+        />
+      </span>
+      <span className="space-y-1">
+        <span className="block text-sm font-semibold">
+          {option.label}
+        </span>
+        <span className="block text-xs leading-5 text-muted-foreground">
+          {option.description}
+        </span>
+      </span>
+    </button>
+  );
+}
 
 function DepRow({
   label,

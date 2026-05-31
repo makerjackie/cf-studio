@@ -26,9 +26,10 @@ import {
   type KVNamespace,
 } from "@/lib/remoteResources";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
-function formatExpiration(value?: number | string | null) {
-  if (!value) return "No TTL";
+function formatExpiration(value: number | string | null | undefined, noTtlLabel: string) {
+  if (!value) return noTtlLabel;
   const seconds = typeof value === "number" ? value : Number(value);
   if (Number.isFinite(seconds)) {
     return new Date(seconds * 1000).toLocaleString();
@@ -36,8 +37,8 @@ function formatExpiration(value?: number | string | null) {
   return String(value);
 }
 
-function stringifyMetadata(value: unknown) {
-  if (value == null) return "No metadata";
+function stringifyMetadata(value: unknown, noMetadataLabel: string) {
+  if (value == null) return noMetadataLabel;
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -46,6 +47,7 @@ function stringifyMetadata(value: unknown) {
 }
 
 export function KVNamespacesView() {
+  const { t } = useI18n();
   const [namespaces, setNamespaces] = useState<KVNamespace[]>([]);
   const [selectedNamespaceId, setSelectedNamespaceId] = useState<string | null>(null);
   const [keys, setKeys] = useState<KVKey[]>([]);
@@ -144,12 +146,15 @@ export function KVNamespacesView() {
     if (!selectedNamespaceId || !keyDraft.trim()) return;
     const ttl = ttlDraft.trim() ? Number(ttlDraft) : undefined;
     if (ttl !== undefined && (!Number.isFinite(ttl) || ttl < 60)) {
-      setError("TTL must be empty or at least 60 seconds.");
+      setError(t("kv.error.ttlMin"));
       return;
     }
     const existingKeyLabel = selectedKey && selectedKey !== keyDraft.trim() ? `${selectedKey} -> ${keyDraft.trim()}` : keyDraft.trim();
     const confirmed = window.confirm(
-      `Save KV key "${existingKeyLabel}" in ${selectedNamespace?.title ?? "this namespace"}? This writes to the remote namespace and may overwrite an existing value.`
+      t("kv.confirm.save", {
+        key: existingKeyLabel,
+        namespace: selectedNamespace?.title ?? t("kv.thisNamespace"),
+      })
     );
     if (!confirmed) return;
     setStatus("saving");
@@ -164,7 +169,7 @@ export function KVNamespacesView() {
         ttl === undefined && !clearTtlOnSave ? entry?.expiration : undefined,
         entry?.metadata
       );
-      setMessage("KV entry saved.");
+      setMessage(t("kv.saved"));
       await loadKeys("reset");
       await loadEntry(keyDraft.trim());
       setStatus("idle");
@@ -176,14 +181,17 @@ export function KVNamespacesView() {
 
   const deleteEntry = async () => {
     if (!selectedNamespaceId || !selectedKey) return;
-    const confirmed = window.confirm(`Delete KV key "${selectedKey}" from ${selectedNamespace?.title ?? "this namespace"}?`);
+    const confirmed = window.confirm(t("kv.confirm.delete", {
+      key: selectedKey,
+      namespace: selectedNamespace?.title ?? t("kv.thisNamespace"),
+    }));
     if (!confirmed) return;
     setStatus("deleting");
     setError(null);
     setMessage(null);
     try {
       await deleteKVEntry(selectedNamespaceId, selectedKey);
-      setMessage("KV entry deleted.");
+      setMessage(t("kv.deleted"));
       setSelectedKey(null);
       setEntry(null);
       setValueDraft("");
@@ -200,10 +208,10 @@ export function KVNamespacesView() {
     try {
       const parsed = JSON.parse(valueDraft);
       setValueDraft(JSON.stringify(parsed, null, 2));
-      setMessage("JSON formatted.");
+      setMessage(t("kv.jsonFormatted"));
       setError(null);
     } catch (jsonError) {
-      setError(`Invalid JSON: ${String(jsonError)}`);
+      setError(t("kv.invalidJson", { error: String(jsonError) }));
     }
   };
 
@@ -211,14 +219,14 @@ export function KVNamespacesView() {
     <div className="flex h-full flex-col gap-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">KV Namespaces</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{t("kv.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Inspect and edit remote Cloudflare Workers KV entries.
+            {t("kv.inspectSubtitle")}
           </p>
         </div>
         <Button variant="outline" onClick={loadNamespaces} disabled={status === "loading"}>
           {status === "loading" ? <Loader2 size={15} className="mr-2 animate-spin" /> : <RefreshCw size={15} className="mr-2" />}
-          Refresh
+          {t("common.refresh")}
         </Button>
       </div>
 
@@ -236,11 +244,11 @@ export function KVNamespacesView() {
       <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[280px_360px_1fr]">
         <section className="min-h-0 overflow-hidden rounded-lg border border-border bg-background">
           <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-semibold">Namespaces</h2>
+            <h2 className="text-sm font-semibold">{t("kv.namespaces")}</h2>
           </div>
           <div className="h-full overflow-y-auto p-2">
             {namespaces.length === 0 && status !== "loading" ? (
-              <p className="p-3 text-sm text-muted-foreground">No KV namespaces found.</p>
+              <p className="p-3 text-sm text-muted-foreground">{t("kv.noNamespaces")}</p>
             ) : (
               namespaces.map((namespace) => (
                 <button
@@ -262,7 +270,7 @@ export function KVNamespacesView() {
         <section className="min-h-0 overflow-hidden rounded-lg border border-border bg-background">
           <div className="border-b border-border px-4 py-3">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold">Keys</h2>
+              <h2 className="text-sm font-semibold">{t("kv.keys")}</h2>
               {keyStatus === "loading" && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
             </div>
             <form
@@ -276,7 +284,7 @@ export function KVNamespacesView() {
               <Input
                 value={prefix}
                 onChange={(event) => setPrefix(event.target.value)}
-                placeholder="Prefix"
+                placeholder={t("kv.prefix")}
                 className="h-8"
               />
               <Button className="h-8" variant="outline" type="submit">
@@ -286,7 +294,7 @@ export function KVNamespacesView() {
           </div>
           <div className="h-full overflow-y-auto p-2">
             {keys.length === 0 ? (
-              <p className="p-3 text-sm text-muted-foreground">No keys loaded.</p>
+              <p className="p-3 text-sm text-muted-foreground">{t("kv.noKeys")}</p>
             ) : (
               keys.map((item) => (
                 <button
@@ -299,14 +307,14 @@ export function KVNamespacesView() {
                 >
                   <span className="block truncate font-mono text-xs">{item.name}</span>
                   <span className="mt-1 block text-[11px] text-muted-foreground">
-                    {formatExpiration(item.expiration)}
+                    {formatExpiration(item.expiration, t("kv.noTtl"))}
                   </span>
                 </button>
               ))
             )}
             {cursor && (
               <Button className="mt-2 w-full" variant="outline" onClick={() => loadKeys("next")}>
-                Load more
+                {t("kv.loadMore")}
               </Button>
             )}
           </div>
@@ -315,9 +323,9 @@ export function KVNamespacesView() {
         <section className="min-h-0 overflow-hidden rounded-lg border border-border bg-background">
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
-              <h2 className="truncate text-sm font-semibold">{entry ? entry.key : "Entry editor"}</h2>
+              <h2 className="truncate text-sm font-semibold">{entry ? entry.key : t("kv.entryEditor")}</h2>
               <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {selectedNamespace?.title ?? "Select a namespace and key"}
+                {selectedNamespace?.title ?? t("kv.selectNamespaceAndKey")}
               </p>
             </div>
             <Button
@@ -333,19 +341,19 @@ export function KVNamespacesView() {
               }}
             >
               <Plus size={14} className="mr-2" />
-              New
+              {t("kv.new")}
             </Button>
           </div>
 
           <div className="grid h-full min-h-0 grid-rows-[auto_1fr_auto] gap-3 p-4">
             <div className="grid gap-3 md:grid-cols-[1fr_160px]">
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Key</label>
-                <Input value={keyDraft} onChange={(event) => setKeyDraft(event.target.value)} placeholder="KV key" />
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("kv.key")}</label>
+                <Input value={keyDraft} onChange={(event) => setKeyDraft(event.target.value)} placeholder={t("kv.keyPlaceholder")} />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">TTL seconds</label>
-                <Input value={ttlDraft} onChange={(event) => setTtlDraft(event.target.value.replace(/[^\d]/g, ""))} placeholder="Optional" />
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("kv.ttlSeconds")}</label>
+                <Input value={ttlDraft} onChange={(event) => setTtlDraft(event.target.value.replace(/[^\d]/g, ""))} placeholder={t("common.optional")} />
                 {entry?.expiration && (
                   <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
                     <input
@@ -354,7 +362,7 @@ export function KVNamespacesView() {
                       onChange={(event) => setClearTtlOnSave(event.target.checked)}
                       disabled={Boolean(ttlDraft.trim())}
                     />
-                    Clear current TTL on save
+                    {t("kv.clearTtlOnSave")}
                   </label>
                 )}
               </div>
@@ -364,7 +372,7 @@ export function KVNamespacesView() {
               <Textarea
                 value={valueDraft}
                 onChange={(event) => setValueDraft(event.target.value)}
-                placeholder="KV value"
+                placeholder={t("kv.valuePlaceholder")}
                 className="min-h-[360px] resize-none font-mono text-xs"
               />
               <div className="flex min-h-0 flex-col gap-3">
@@ -372,24 +380,24 @@ export function KVNamespacesView() {
                   <div className="flex items-start gap-2">
                     <KeyRound size={14} className="mt-0.5 text-primary" />
                     <div>
-                      <p className="text-xs font-medium">Expiration</p>
+                      <p className="text-xs font-medium">{t("kv.expiration")}</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        {formatExpiration(entry?.expiration)}
+                        {formatExpiration(entry?.expiration, t("kv.noTtl"))}
                       </p>
                     </div>
                   </div>
                 </div>
                 <div className="min-h-0 rounded-lg border border-border bg-muted/20 p-3">
-                  <p className="text-xs font-medium">Metadata</p>
+                  <p className="text-xs font-medium">{t("kv.metadata")}</p>
                   <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-xs text-muted-foreground">
-                    {stringifyMetadata(entry?.metadata)}
+                    {stringifyMetadata(entry?.metadata, t("kv.noMetadata"))}
                   </pre>
                 </div>
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
                   <div className="flex items-start gap-2">
                     <AlertTriangle size={14} className="mt-0.5 text-amber-600" />
                     <p className="text-xs leading-5 text-muted-foreground">
-                      Saving overwrites the remote value for this key. Deleting a key requires confirmation.
+                      {t("kv.writeWarning")}
                     </p>
                   </div>
                 </div>
@@ -400,25 +408,25 @@ export function KVNamespacesView() {
               <div className="flex gap-2">
                 <Button variant="outline" onClick={formatJson}>
                   <Braces size={14} className="mr-2" />
-                  Format JSON
+                  {t("kv.formatJson")}
                 </Button>
                 <Button variant="outline" onClick={() => writeText(valueDraft, { label: "CFDesk" })}>
                   <Clipboard size={14} className="mr-2" />
-                  Copy value
+                  {t("kv.copyValue")}
                 </Button>
                 <Button variant="outline" onClick={() => writeText(keyDraft || selectedKey || "", { label: "CFDesk" })} disabled={!keyDraft && !selectedKey}>
                   <Clipboard size={14} className="mr-2" />
-                  Copy key
+                  {t("kv.copyKey")}
                 </Button>
               </div>
               <div className="flex gap-2">
                 <Button variant="destructive" onClick={deleteEntry} disabled={!selectedKey || status === "deleting"}>
                   {status === "deleting" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Trash2 size={14} className="mr-2" />}
-                  Delete
+                  {t("common.delete")}
                 </Button>
                 <Button onClick={saveEntry} disabled={!selectedNamespaceId || !keyDraft.trim() || status === "saving"}>
                   {status === "saving" ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Save size={14} className="mr-2" />}
-                  Save
+                  {t("common.save")}
                 </Button>
               </div>
             </div>

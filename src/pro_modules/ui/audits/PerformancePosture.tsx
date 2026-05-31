@@ -1,3 +1,6 @@
+import { useI18n } from "@/lib/i18n";
+
 export function PerformancePosture() {
-  return <div className="text-sm text-muted-foreground">Performance audit is not included in this public fork yet.</div>;
+  const { t } = useI18n();
+  return <div className="text-sm text-muted-foreground">{t("audit.performanceUnavailable")}</div>;
 }
